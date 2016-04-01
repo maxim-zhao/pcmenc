@@ -87,3 +87,6 @@ $RECYCLE.BIN/
 x64
 Debug
 Release
+*.vspx
+.vs
+*.VC.db

@@ -20,10 +20,11 @@
 **
 ******************************************************************************
 */
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <math.h>
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
+#include <cmath>
+#include <ctime>
 
 typedef unsigned char  UInt8;
 typedef unsigned short UInt16;
@@ -37,7 +38,7 @@ typedef   signed long  Int32;
 
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #define MAX(a,b) ((a)>(b)?(a):(b))
-#define ABS(a)   ((a)>(0)?(a):-1*(a))
+#define ABS(a)   std::abs(a)
 
 #define str2ul(s) ((UInt32)s[0]<<0|(UInt32)s[1]<<8|(UInt32)s[2]<<16|(UInt32)s[3]<<24)
 #define needSwap() (*(UInt32*)"A   " == 0x41202020)
@@ -127,13 +128,13 @@ double* resample(double* in , UInt32 inLen,  UInt32 inRate,
 
     st_effect effp[1];
 
-    int swap = needSwap();
+    bool swap = needSwap();
 
     st_sample_t* ibuf = (st_sample_t*)calloc(sizeof(st_sample_t), inLen);
     st_sample_t* obuf = (st_sample_t*)calloc(sizeof(st_sample_t), outBufLen);
 
-    st_signalinfo_t iinfo = { inRate, 4, 0, swap };
-    st_signalinfo_t oinfo = { outRate, 4, 0, swap };
+    st_signalinfo_t iinfo = { inRate, 4, 0, 1, swap };
+    st_signalinfo_t oinfo = { outRate, 4, 0, 1, swap };
 
     st_effect_t st_effect[1] = {
         {"resample", ST_EFF_RATE,
@@ -293,7 +294,7 @@ double* loadSamples(const char* filename, UInt32 wantedFrequency, UInt32* count)
         return NULL;
     }
 
-    double* retSamples = NULL;
+    double* retSamples;
     if (ABS(1. * wantedFrequency / samplesPerSec - 1) < MIN_ALLOWED_FREQ_DIFF) {
         retSamples = (double*)calloc(sizeof(double), sampleNum);
         memcpy(retSamples, tempSamples, sampleNum * sizeof(double));
@@ -316,7 +317,7 @@ double* loadSamples(const char* filename, UInt32 wantedFrequency, UInt32* count)
 // Encodes sample data to be played on the PSG.
 // The output buffer needs to be three times the size of the input buffer
 //
-UInt8* viterbi(int ipo, double amplitude, const double* samples, int length, 
+UInt8* viterbi(int samplesPerTriplet, double amplitude, const double* samples, int length, 
                UInt32 idt1, UInt32 idt2, UInt32 idt3, 
                int interpolation, int costFunction,
                int saveInternal, UInt32* binSize)
@@ -343,34 +344,39 @@ UInt8* viterbi(int ipo, double amplitude, const double* samples, int length,
     double inputMin = 1.0E50;
     double inputMax = -1.0E50;
 
-    for (int i = 0; i < length; i++) {
+    for (int i = 0; i < length; i++)
+	{
         inputMin = MIN(samples[i], inputMin);
         inputMax = MAX(samples[i], inputMax);
     }
 
-    for (int i = 0; i < length; i++) {
+    for (int i = 0; i < length; i++)
+	{
         y[i] = amplitude * (samples[i] - inputMin) / (inputMax - inputMin);
     }
-    for (int i = length; i < length + 256; i++) {
+    for (int i = length; i < length + 256; i++)
+	{
         y[i] = y[length - 1];
     }
 
     double dt[3];
-    dt[0] = 1. * idt1 / (idt1 + idt2 + idt3);
-    dt[1] = 1. * idt2 / (idt1 + idt2 + idt3);
-    dt[2] = 1. * idt3 / (idt1 + idt2 + idt3);
+	uint32_t cyclesPerTriplet = idt1 + idt2 + idt3;
+    dt[0] = (double)idt1 / cyclesPerTriplet;
+    dt[1] = (double)idt2 / cyclesPerTriplet;
+    dt[2] = (double)idt3 / cyclesPerTriplet;
 
-    if (ipo < 1) {
-        ipo = 1;
+    if (samplesPerTriplet < 1)
+	{
+        samplesPerTriplet = 1;
     }
 
     printf("Viterbi SNR optimization:\n");
-    printf("   %d input samples per PSG tripplet output\n", ipo);
+    printf("   %d input samples per PSG triplet output\n", samplesPerTriplet);
     printf("   dt1 = %d  (Normalized: %1.3f)\n", (int)idt1, dt[0]);
     printf("   dt2 = %d  (Normalized: %1.3f)\n", (int)idt2, dt[1]);
     printf("   dt3 = %d  (Normalized: %1.3f)\n", (int)idt3, dt[2]);
 
-    int     N = (length + ipo - 1) / ipo * 3;
+    int     N = (length + samplesPerTriplet - 1) / samplesPerTriplet * 3;
     double* x = (double*)calloc(sizeof(double), N);
 
     int     nL,nR;
@@ -400,9 +406,9 @@ UInt8* viterbi(int ipo, double amplitude, const double* samples, int length,
         break;
     }
     for (int i = 0; i < N / 3; i++) {
-        int     t0 = (ipo * i);
-        double  t1 = (ipo * (i+dt[0]));
-        double  t2 = (ipo * (i+dt[0]+dt[1]));
+        int     t0 = (samplesPerTriplet * i);
+        double  t1 = (samplesPerTriplet * (i+dt[0]));
+        double  t2 = (samplesPerTriplet * (i+dt[0]+dt[1]));
         double  dt1 = t1-(int)t1;
         double  dt2 = t2-(int)t2;
 
@@ -421,23 +427,26 @@ UInt8* viterbi(int ipo, double amplitude, const double* samples, int length,
         fclose(f2);
     }
 
-    UInt8 nxtS[256][16];
-    for (int i = 0; i < 16; i++) {
-        for (int j = 0; j < 16; j++) {
-            for (int in = 0; in < 16; in++) {
-                nxtS[i * 16 + j][in] = (UInt8)(j * 16 + in);
-            }
-        }
-    }
+	UInt8 nxtS[256*16];
+	for (int i = 0; i < 16; i++) {
+		for (int j = 0; j < 16; j++) {
+			for (int in = 0; in < 16; in++) {
+				nxtS[i << 8 | j << 4 | in] = (UInt8)(j * 16 + in);
+			}
+		}
+	}
 
-    double curV[256][16];
-    for (int i = 0; i < 16; i++) {
-        for (int j = 0; j < 16; j++) {
-            for (int in = 0; in < 16; in++) {
-                curV[i * 16 + j][in] = vol[i] + vol[j] + vol[in];
-            }
-        }
-    }
+	double curV[256*16];
+	for (int i = 0; i < 16; i++) 
+	{
+		for (int j = 0; j < 16; j++) 
+		{
+			for (int in = 0; in < 16; in++) 
+			{
+				curV[i << 8 | j << 4 | in] = vol[i] + vol[j] + vol[in];
+			}
+		}
+	}
 
     UInt8* Stt[256];
     UInt8* Itt[256];
@@ -455,7 +464,6 @@ UInt8* viterbi(int ipo, double amplitude, const double* samples, int length,
 
     printf("   Using cost function: L%d\n",costFunction);
 
-
     for (int t = 0; t < N; t++) {
         double Ln[256];
         for (int i = 0; i < 256; i++) {
@@ -466,51 +474,57 @@ UInt8* viterbi(int ipo, double amplitude, const double* samples, int length,
             printf("Processing %3.2f%%\r", 100. * t / N);
         }
 
-        for (int cs = 0; cs < 256; cs++) {
-            for (int in = 0; in < 16; in++) {
-                double cv = curV[cs][in];
-                int ns = nxtS[cs][in];
+		for (int i = 0; i < 256 * 16; ++i)
+		{
+			int cs = i >> 4;
+			int in = i & 15;
 
-                double Ltst;
-                double normVal = ABS(x[t] - cv);
-                switch (costFunction) {
-                case 1:
-                    Ltst = L[cs] + dt[t % 3] * normVal;
-                    break;
-                case 2:
-                    Ltst = L[cs] + dt[t % 3] * normVal * normVal;
-                    break;
-                case 3:
-                    Ltst = L[cs] + dt[t % 3] * normVal * normVal * normVal;
-                    break;
-                case 4:
-                    Ltst = L[cs] + dt[t % 3] * normVal * normVal * normVal * normVal;
-                    break;
-                default:
-                    Ltst = L[cs] + dt[t % 3] * pow(normVal, costFunction);
-                    break;
-                }
+			double cv = curV[i];
+			int ns = nxtS[i];
+
+			double Ltst;
+            double normVal = ABS(x[t] - cv);
+            switch (costFunction) {
+            case 1:
+                Ltst = L[cs] + dt[t % 3] * normVal;
+                break;
+            case 2:
+                Ltst = L[cs] + dt[t % 3] * normVal * normVal;
+                break;
+            case 3:
+                Ltst = L[cs] + dt[t % 3] * normVal * normVal * normVal;
+                break;
+            case 4:
+                Ltst = L[cs] + dt[t % 3] * normVal * normVal * normVal * normVal;
+                break;
+            default:
+                Ltst = L[cs] + dt[t % 3] * pow(normVal, costFunction);
+                break;
+            }
              
-                if (Ln[ns] >= Ltst) {
-                    Ln[ns] = Ltst;
-                    St[ns] = cs;
-                    It[ns] = in;
-                }
+            if (Ln[ns] >= Ltst)
+			{
+                Ln[ns] = Ltst;
+                St[ns] = cs;
+                It[ns] = in;
             }
         }
 
-        for (int i = 0; i < 256; i++) {
+        for (int i = 0; i < 256; i++)
+		{
             L[i]      = Ln[i];
             Stt[i][t] = St[i];
             Itt[i][t] = It[i];
         }
     }
 
-    printf("Processing %3.2f%%\n", 100.);
+    printf("Processing %3.2f%%\n", 100.0);
 
-    int minIndex = 0;
-    for (int i = 0; i < 256; i++) {
-        if (L[minIndex] > L[i]) {
+	int minIndex = 0;
+    for (int i = 0; i < 256; i++)
+	{
+        if (L[minIndex] > L[i])
+		{
             minIndex = i;
         }
     }
@@ -522,7 +536,8 @@ UInt8* viterbi(int ipo, double amplitude, const double* samples, int length,
 
     P[N - 1] = Stt[minIndex][N - 1];
     I[N - 1] = Itt[minIndex][N - 1];
-    for (int t = N - 2; t >= 0; t--) {
+    for (int t = N - 2; t >= 0; t--)
+	{
         P[t] = Stt[P[t + 1]][t];
         I[t] = Itt[P[t + 1]][t];
     }
@@ -530,11 +545,13 @@ UInt8* viterbi(int ipo, double amplitude, const double* samples, int length,
 
     double* V = (double*)calloc(sizeof(double), N);
     
-    for (int t = 0; t <N; t++) {
-        V[t] = curV[P[t]][ I[t]]; 
+    for (int t = 0; t <N; t++)
+	{
+		V[t] = curV[P[t] << 4 | I[t]];
     }
 
-    if (saveInternal) {
+    if (saveInternal)
+	{
         FILE* f = fopen("v.bin", "w");
         fwrite(V, sizeof(V[0]), N, f);
         fclose(f);
@@ -546,7 +563,8 @@ UInt8* viterbi(int ipo, double amplitude, const double* samples, int length,
     double en = 0;
     double er = 0;
     double mi = 0;    
-    for (int i = 0; i < N / 3; i++) {
+    for (int i = 0; i < N / 3; i++)
+	{
         en += (x[3 * i + 0]) * (x[3 * i + 0]) * dt[0] +
               (x[3 * i + 1]) * (x[3 * i + 1]) * dt[1] +
               (x[3 * i + 2]) * (x[3 * i + 2]) * dt[2];
@@ -564,7 +582,8 @@ UInt8* viterbi(int ipo, double amplitude, const double* samples, int length,
     free(P);
     free(V);
        
-    for (int i = 0; i < 256; i++) {
+    for (int i = 0; i < 256; i++)
+	{
         free(Stt[i]);
         free(Itt[i]);
     }
@@ -700,7 +719,7 @@ UInt8* rlePack(UInt8* binBuffer, UInt32 length, int romSplit, int incr, UInt32* 
     while (count > 0) {
         int curCount = MIN(count, SUB_SAMPLE_LEN);
 
-        UInt8* encBuffer = NULL;
+        UInt8* encBuffer;
         UInt32 encLen = 0;
 
         for (;;) {
@@ -788,8 +807,6 @@ int convertWav(const char* filename, int saveInternal, int costFunction, int int
 
     return 1;
 }
-
-
 
 //////////////////////////////////////////////////////////////////////////////
 // Program main.
@@ -985,8 +1002,9 @@ int main(int argc, char** argv)
 
         return 0;
     }
-    
+
     return convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, encodingType, ratio, (double)amplitude / 100, romSplit, packingType);
 }
 
 
+// */
