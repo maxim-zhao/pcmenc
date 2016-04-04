@@ -29,6 +29,9 @@
 #include <fstream>
 #include <iterator>
 #include <cstdint>
+#include <sstream>
+
+#include "st.h"
 
 // Minimum allowed frequency difference for not doing frequency conversion
 #define MIN_ALLOWED_FREQ_DIFF 0.005
@@ -59,48 +62,79 @@ static double S(const double y[], int i, double dt,int L,int R)
   return yd;
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// Reads two bytes from a file and convert from wav file endian to host endian
-//
-int fileReadUInt16(FILE* f, uint16_t* val) {
-    uint16_t v;
-    if (1 != fread(&v, sizeof(uint16_t), 1, f)) {
-        return 0;
-    }
-    if (needSwap()) {
-        v = ((v >> 8) & 0x00ff) | ((v << 8) & 0xff00);
-    }
-    *val = v;
-    return 1;
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// Reads four bytes from a file and convert from wav file endian to host endian
-//
-int fileReadUInt32(FILE* f, uint32_t* val) {
-    uint32_t v;
-    if (1 != fread(&v, sizeof(uint32_t), 1, f)) {
-        return 0;
-    }
-    if (needSwap()) {
-        v = ((v >> 24) & 0x000000ff) | ((v >>  8) & 0x0000ff00) |
-            ((v <<  8) & 0x00ff0000) | ((v << 24) & 0xff000000);
-    }
-    *val = v;
-    return 1;
-}
-
-#ifdef NO_RESAMPLING
-
-double* resample(double* in , uint32_t inLen,  uint32_t inRate, uint32_t outRate, uint32_t* outLen)
+// Helper class for file IO
+class FileReader
 {
-    printf("Resampling not supported\n");
-    return NULL;
-}
+	std::ifstream _f;
+	uint32_t _size;
 
-#else
+public:
+	explicit FileReader(const std::string& filename)
+	{
+		_f.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
+		_f.open(filename, std::ifstream::binary);
+		_f.seekg(0, std::ios::end);
+		_size = (uint32_t)(_f.tellg());
+		_f.seekg(0, std::ios::beg);
+	}
 
-#include "st.h"
+	~FileReader()
+	{
+		_f.close();
+	}
+
+	uint32_t read32()
+	{
+		uint32_t v;
+		_f.read((char*)&v, sizeof(uint32_t));
+		if (needSwap())
+		{
+			v = ((v >> 24) & 0x000000ff) | ((v >> 8) & 0x0000ff00) |
+				((v << 8) & 0x00ff0000) | ((v << 24) & 0xff000000);
+		}
+		return v;
+	}
+
+	uint16_t read16()
+	{
+		uint16_t v;
+		_f.read((char*)&v, sizeof(uint16_t));
+		if (needSwap())
+		{
+			v = ((v << 8) & 0x00ff0000) | ((v << 24) & 0xff000000);
+		}
+		return v;
+	}
+
+	uint8_t read()
+	{
+		uint8_t v;
+		_f.read((char*)&v, sizeof(uint8_t));
+		return v;
+	}
+
+	FileReader& checkMarker(char marker[5])
+	{
+		if (read32() != str2ul(marker))
+		{
+			std::ostringstream ss;
+			ss << "Marker " << marker << " not found in file";
+			throw std::runtime_error(ss.str());
+		}
+		return *this;
+	}
+
+	uint32_t size() const
+	{
+		return _size;
+	}
+
+	FileReader& seek(int offset)
+	{
+		_f.seekg(offset, std::ios::cur);
+		return *this;
+	}
+};
 
 //////////////////////////////////////////////////////////////////////////////
 // Resamples a sample from inRate to outRate and returns a new buffer with
@@ -172,7 +206,6 @@ double* resample(double* in , uint32_t inLen,  uint32_t inRate,
     
     return outBuf;
 }
-#endif
 
 
 //////////////////////////////////////////////////////////////////////////////
@@ -180,123 +213,107 @@ double* resample(double* in , uint32_t inLen,  uint32_t inRate,
 //
 double* loadSamples(const std::string& filename, uint32_t wantedFrequency, uint32_t* count)
 {
-    FILE* f = fopen(filename.c_str(), "rb");
-    if (f == NULL) {
-        return NULL;
+	FileReader f(filename);
+
+	f.checkMarker("RIFF");
+
+	uint32_t riffSize = f.read32();
+	if (riffSize != f.size() - 8)
+	{
+		throw std::runtime_error("File size does not match RIFF header");
+	}
+
+	f.checkMarker("WAVE").checkMarker("fmt ");
+
+	uint32_t chunkSize = f.read32();
+    
+    uint16_t formatType = f.read16();
+	if (formatType != 0 && formatType != 1)
+	{
+		throw std::runtime_error("Unsuported format type");
+	}
+
+    uint16_t channels = f.read16();
+	if (channels != 1 && channels != 2)
+	{
+		throw std::runtime_error("Unsuported channel count");
+	}
+
+    uint32_t samplesPerSec = f.read32();
+
+	f.seek(6); // discard avgBytesPerSec (4), blockAlign (2)
+
+	uint16_t bitsPerSample = f.read16();
+    if (bitsPerSample & 0x07)
+	{
+		throw std::runtime_error("Only supports 8, 16, 24, and 32 bits per sample");
     }
 
-    int success = 1;
+	// Seek to the next chunk
+	f.seek(chunkSize - 16);
 
-    uint32_t riff;
-    success &= fileReadUInt32(f, &riff);
-    success &= riff == str2ul("RIFF") ? 1 : 0;
+	while (f.read32() != str2ul("data"))
+	{
+		// Some other chunk
+		chunkSize = f.read32();
+		f.seek(chunkSize);
+	}
 
-    uint32_t riffSize;
-    success &= fileReadUInt32(f, &riffSize);
-    fseek(f, 0, SEEK_END);
-    success &= riffSize == (uint32_t)ftell(f) - 8 ? 1 : 0;
-    fseek(f, 8, SEEK_SET);
-
-    uint32_t wave;
-    success &= fileReadUInt32(f, &wave);
-    success &= wave == str2ul("WAVE") ? 1 : 0;
-
-    uint32_t fmt;
-    success &= fileReadUInt32(f, &fmt);
-    success &= fmt == str2ul("fmt ") ? 1 : 0;
-
-    uint32_t chunkSize;
-    success &= fileReadUInt32(f, &chunkSize);
-
-    uint16_t formatType;
-    success &= fileReadUInt16(f, &formatType);
-    success &= formatType == 0 || formatType == 1 ? 1 : 0;
-
-    uint16_t channels;
-    success &= fileReadUInt16(f, &channels);
-    success &= channels == 1 || channels == 2;
-
-    uint32_t samplesPerSec;
-    success &= fileReadUInt32(f, &samplesPerSec);
-
-    uint32_t avgBytesPerSec;
-    success &= fileReadUInt32(f, &avgBytesPerSec);
-
-    uint16_t blockAlign;
-    success &= fileReadUInt16(f, &blockAlign);
-
-    uint16_t bitsPerSample;
-    success &= fileReadUInt16(f, &bitsPerSample);
-    if (bitsPerSample & 0x07) {
-        printf("Only supports 8, 16, 24, and 32 bits per sample\n");
-        success = 0;
-    }
-
-    while (success) {
-        uint32_t data;
-        success &= fileReadUInt32(f, &data);
-        if (data == str2ul("data")) {
-            break;
-        }
-        fseek(f, -3, SEEK_CUR);
-    }
-
-    uint32_t dataSize;
-    success &= fileReadUInt32(f, &dataSize);
+    uint32_t dataSize = f.read32();
     uint32_t bytesPerSample = ((bitsPerSample + 7) / 8);
     uint32_t sampleNum = dataSize / bytesPerSample / channels;
 
-    if (!success) {
-        fclose(f);
-        return NULL;
-    }
-
     double* tempSamples = (double*)calloc(sizeof(double), sampleNum);
 
-    for (uint32_t i = 0; success && i < sampleNum; i++) {
+    for (uint32_t i = 0; i < sampleNum; ++i)
+	{
         double value = 0;
-        for (int c = 0; c < channels; c++) {
-            if (bytesPerSample == 1) {
-                uint8_t val;
-                success &= 1 == fread(&val, 1, 1, f);
-                value += ((int)val - 0x80) / 128. / channels;
+        for (int c = 0; c < channels; ++c)
+		{
+            if (bytesPerSample == 1) 
+			{
+                uint8_t val = f.read();
+                value += ((int)val - 0x80) / 128.0 / channels;
             }
             else {
                 uint32_t val = 0;
-                for (uint32_t j = 0; j < bytesPerSample; j++) {
-                    uint8_t tmp;
-                    success &= 1 == fread(&tmp, 1, 1, f);
+                for (uint32_t j = 0; j < bytesPerSample; j++) 
+				{
+                    uint8_t tmp = f.read();
                     val = (val >> 8) | (tmp << 24);
                 }
-                value += (int)val / 2147483649. / channels;
+                value += (int)val / 2147483649.0 / channels;
             }
         }
         tempSamples[i] = value;
     }
-    fclose(f);
-
-    if (!success) {
-        return NULL;
-    }
 
     double* retSamples;
-    if (ABS(1. * wantedFrequency / samplesPerSec - 1) < MIN_ALLOWED_FREQ_DIFF) {
+    if (ABS(1.0 * wantedFrequency / samplesPerSec - 1) < MIN_ALLOWED_FREQ_DIFF) 
+	{
         retSamples = (double*)calloc(sizeof(double), sampleNum);
         memcpy(retSamples, tempSamples, sampleNum * sizeof(double));
         *count = sampleNum;
     }
-    else {
+    else 
+	{
         printf("Resampling input wave from %dHz to %dHz\n", (int)samplesPerSec, (int)wantedFrequency);
         retSamples = resample(tempSamples, sampleNum, samplesPerSec, wantedFrequency, count);
     }
 
     free(tempSamples);
 
-//    *count = *count / 10;
-
     return retSamples;
 }
 
+void dump(const std::string filename, const uint8_t* pData, int byteCount)
+{
+	std::ofstream f;
+	f.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
+	f.open(filename, std::fstream::binary);
+	std::copy(pData, pData + byteCount, std::ostream_iterator<uint8_t>(f));
+	f.close();
+}
 
 //////////////////////////////////////////////////////////////////////////////
 // Encodes sample data to be played on the PSG.
@@ -402,20 +419,19 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
         x[3*i+2] =  S(y,(int)t2,dt2,nL,nR);
     }
 
-    if (saveInternal) {
-        FILE* f1 = fopen("x.bin", "wb");
-        fwrite(x, sizeof(x[0]), N, f1);
-        fclose(f1);
-
-        FILE* f2 = fopen("y.bin", "wb");
-        fwrite(y, sizeof(y[0]), length + 256, f2);
-        fclose(f2);
+    if (saveInternal) 
+	{
+		dump("x.bin", (uint8_t*)x, N * sizeof(double));
+		dump("y.bin", (uint8_t*)y, (length * 256) * sizeof(double));
     }
 
 	uint8_t nxtS[16*16*16];
-	for (int i = 0; i < 16; i++) {
-		for (int j = 0; j < 16; j++) {
-			for (int in = 0; in < 16; in++) {
+	for (int i = 0; i < 16; i++) 
+	{
+		for (int j = 0; j < 16; j++) 
+		{
+			for (int in = 0; in < 16; in++) 
+			{
 				nxtS[i << 8 | j << 4 | in] = (uint8_t)(j * 16 + in);
 			}
 		}
@@ -542,9 +558,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 
     if (saveInternal)
 	{
-        FILE* f = fopen("v.bin", "w");
-        fwrite(V, sizeof(V[0]), N, f);
-        fclose(f);
+		dump("v.bin", (uint8_t*)V, N * sizeof(double));
     }    
 
 
@@ -630,11 +644,7 @@ uint8_t* rleEncode(const uint8_t* buffer, int length, int incr, uint32_t* encLen
 //
 void saveEncodedBuffer(const std::string& filename, const uint8_t* buffer, int length)
 {
-	std::ofstream f;
-	f.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
-	f.open(filename, std::fstream::binary);
-	std::copy(buffer, buffer + length, std::ostream_iterator<uint8_t>(f));
-	f.close();
+	dump(filename, buffer, length);
 }
 
 uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, int romSplit, uint32_t* destLength)
