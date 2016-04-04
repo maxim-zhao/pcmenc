@@ -22,8 +22,9 @@
 */
 #include <cstdio>
 #include <cstring>
-#include <cstdlib>
 #include <cmath>
+#include <algorithm>
+#include <stdlib.h>
 #include <ctime>
 
 typedef unsigned char  UInt8;
@@ -36,9 +37,9 @@ typedef   signed long  Int32;
 // Minimum allowed frequency difference for not doing frequency conversion
 #define MIN_ALLOWED_FREQ_DIFF 0.005
 
-#define MIN(a,b) ((a)<(b)?(a):(b))
-#define MAX(a,b) ((a)>(b)?(a):(b))
-#define ABS(a)   std::abs(a)
+#define MIN(a,b) fmin(a, b) // Beats std::max, same as ?:
+#define MAX(a,b) fmax(a, b) // Beats std::max, same as ?:
+#define ABS(a)   std::abs(a) // Beats fabs, ?:
 
 #define str2ul(s) ((UInt32)s[0]<<0|(UInt32)s[1]<<8|(UInt32)s[2]<<16|(UInt32)s[3]<<24)
 #define needSwap() (*(UInt32*)"A   " == 0x41202020)
@@ -427,7 +428,7 @@ UInt8* viterbi(int samplesPerTriplet, double amplitude, const double* samples, i
         fclose(f2);
     }
 
-	UInt8 nxtS[256*16];
+	UInt8 nxtS[16*16*16];
 	for (int i = 0; i < 16; i++) {
 		for (int j = 0; j < 16; j++) {
 			for (int in = 0; in < 16; in++) {
@@ -436,7 +437,7 @@ UInt8* viterbi(int samplesPerTriplet, double amplitude, const double* samples, i
 		}
 	}
 
-	double curV[256*16];
+	double curV[16*16*16];
 	for (int i = 0; i < 16; i++) 
 	{
 		for (int j = 0; j < 16; j++) 
@@ -454,7 +455,8 @@ UInt8* viterbi(int samplesPerTriplet, double amplitude, const double* samples, i
     UInt8  St[256];
     UInt8  It[256];
 
-    for (int i = 0; i < 256; i++) {
+    for (int i = 0; i < 256; i++)
+	{
         Stt[i] = (UInt8*)calloc(sizeof(UInt8), N);
         Itt[i] = (UInt8*)calloc(sizeof(UInt8), N);
         L[i] = 0;
@@ -464,17 +466,20 @@ UInt8* viterbi(int samplesPerTriplet, double amplitude, const double* samples, i
 
     printf("   Using cost function: L%d\n",costFunction);
 
-    for (int t = 0; t < N; t++) {
+    for (int t = 0; t < N; t++) 
+	{
         double Ln[256];
-        for (int i = 0; i < 256; i++) {
+        for (int i = 0; i < 256; i++) 
+		{
             Ln[i] = 1.0E50; //inf
         }
 
-        if (t % 1000 == 0) {
+        if (t % 1024 == 0) 
+		{
             printf("Processing %3.2f%%\r", 100. * t / N);
         }
 
-		for (int i = 0; i < 256 * 16; ++i)
+		for (int i = 0; i < 16 * 16 * 16; ++i)
 		{
 			int cs = i >> 4;
 			int in = i & 15;
@@ -484,7 +489,8 @@ UInt8* viterbi(int samplesPerTriplet, double amplitude, const double* samples, i
 
 			double Ltst;
             double normVal = ABS(x[t] - cv);
-            switch (costFunction) {
+            switch (costFunction) 
+			{
             case 1:
                 Ltst = L[cs] + dt[t % 3] * normVal;
                 break;
@@ -517,8 +523,8 @@ UInt8* viterbi(int samplesPerTriplet, double amplitude, const double* samples, i
             Itt[i][t] = It[i];
         }
     }
-
-    printf("Processing %3.2f%%\n", 100.0);
+	
+	printf("Processing %3.2f%%\n", 100.0);
 
 	int minIndex = 0;
     for (int i = 0; i < 256; i++)
@@ -808,12 +814,13 @@ int convertWav(const char* filename, int saveInternal, int costFunction, int int
     return 1;
 }
 
+
 //////////////////////////////////////////////////////////////////////////////
 // Program main.
 //
 int main(int argc, char** argv)
 {
-    char* filename = NULL;
+	char* filename = NULL;
     int romSplit = 0;
     int saveInternal = 0;    
     int packingType = 0;  // 0=RLE, 1=TEST
