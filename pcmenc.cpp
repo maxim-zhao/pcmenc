@@ -796,7 +796,7 @@ int convertWav(const std::string& filename, int saveInternal, int costFunction, 
 //
 int main(int argc, char** argv)
 {
-	char* filename = NULL;
+	std::string filename;
     int romSplit = 0;
     int saveInternal = 0;    
     int packingType = 0;  // 0=RLE, 1=TEST
@@ -814,49 +814,49 @@ int main(int argc, char** argv)
     for (int i = 1; i < argc; i++) {
         if (0 == strcmp(argv[i], "-cpuf") || 0 == strcmp(argv[i], "/cpuf")) {
             if (++i >= argc) {
-                filename = NULL;
+                filename.clear();
                 break;
             }
             cpuFrequency = atoi(argv[i]);
         }
         else if (0 == strcmp(argv[i], "-a") || 0 == strcmp(argv[i], "/a")) {
             if (++i >= argc) {
-                filename = NULL;
-                break;
+				filename.clear();
+				break;
             }
             amplitude = atoi(argv[i]);
         }
         else if (0 == strcmp(argv[i], "-dt1") || 0 == strcmp(argv[i], "/dt1")) {
             if (++i >= argc) {
-                filename = NULL;
-                break;
+				filename.clear();
+				break;
             }
             dt1 = atoi(argv[i]);
         }
         else if (0 == strcmp(argv[i], "-dt2") || 0 == strcmp(argv[i], "/dt2")) {
             if (++i >= argc) {
-                filename = NULL;
+                filename.clear();
                 break;
             }
             dt2 = atoi(argv[i]);
         }
         else if (0 == strcmp(argv[i], "-dt3") || 0 == strcmp(argv[i], "/dt3")) {
             if (++i >= argc) {
-                filename = NULL;
+                filename.clear();
                 break;
             }
             dt3 = atoi(argv[i]);
         }
         else if (0 == strcmp(argv[i], "-e") || 0 == strcmp(argv[i], "/e")) {
             if (++i >= argc) {
-                filename = NULL;
+                filename.clear();
                 break;
             }
             encodingType = atoi(argv[i]);
         }
         else if (0 == strcmp(argv[i], "-rto") || 0 == strcmp(argv[i], "/rto")) {
             if (++i >= argc) {
-                filename = NULL;
+                filename.clear();
                 break;
             }
             ratio = atoi(argv[i]);
@@ -869,30 +869,30 @@ int main(int argc, char** argv)
         }
         else if (0 == strcmp(argv[i], "-p") || 0 == strcmp(argv[i], "/p")) {
             if (++i >= argc) {
-                filename = NULL;
+                filename.clear();
                 break;
             }
             packingType = atoi(argv[i]);
         }
         else if (0 == strcmp(argv[i], "-c") || 0 == strcmp(argv[i], "/c")) {
             if (++i >= argc) {
-                filename = NULL;
+                filename.clear();
                 break;
             }
             costFunction = atoi(argv[i]);
         }
         else if (0 == strcmp(argv[i], "-i") || 0 == strcmp(argv[i], "/i")) {
             if (++i >= argc) {
-                filename = NULL;
+                filename.clear();
                 break;
             }
             interpolation = atoi(argv[i]);
         }
-        else if (filename == NULL && argv[i][0] != '-') {
+        else if (filename.empty() && argv[i][0] != '-') {
             filename = argv[i];
         }
         else {
-            filename = NULL;
+            filename.clear();
             break;
         }
     }
@@ -917,11 +917,13 @@ int main(int argc, char** argv)
         break;
     }
 
-    if (dt1 + dt2 + dt3 == 0 || cpuFrequency == 0) {
-        filename = NULL;
+    if (dt1 + dt2 + dt3 == 0 || cpuFrequency == 0) 
+	{
+        filename.clear();
     }
 
-    if (filename == NULL) {
+    if (filename.empty()) 
+	{
         printf("Usage:\n");
         printf("pcmenc.exe [-r] [-e <encoding>] [-cpuf <freq>] [-p <packing>]\n");
         printf("           [-dt1 <tstates>] [-dt2 <tstates>] [-dt3 <tstates>]\n");
