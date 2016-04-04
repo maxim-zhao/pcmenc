@@ -143,7 +143,7 @@ int st_resample_getopts(eff_t effp, int n, char **argv)
                 }
         }
 
-        if ((n >= 1) && (sscanf(argv[0], "%lf", &r->rolloff) != 1))
+        if ((n >= 1) && (sscanf_s(argv[0], "%lf", &r->rolloff) != 1))
         {
           st_fail("Usage: resample [ rolloff [ beta ] ]");
           return (ST_EOF);
@@ -154,7 +154,7 @@ int st_resample_getopts(eff_t effp, int n, char **argv)
           return(ST_EOF);
         }
 
-        if ((n >= 2) && !sscanf(argv[1], "%lf", &r->beta))
+        if ((n >= 2) && !sscanf_s(argv[1], "%lf", &r->beta))
         {
           st_fail("Usage: resample [ rolloff [ beta ] ]");
           return (ST_EOF);
@@ -342,20 +342,20 @@ int st_resample_flow(eff_t effp, st_sample_t *ibuf, st_sample_t *obuf,
         }
 
         {
-        long i,k;
+        long i1,k;
         /* Copy back portion of input signal that must be re-used */
         k = r->Xp - r->Xoff;
         /*fprintf(stderr,"k %d, last %d\n",k,last);*/
-        for (i=0; i<last - k; i++) 
-            r->X[i] = r->X[i+k];
+        for (i1=0; i1<last - k; i1++) 
+            r->X[i1] = r->X[i1+k];
 
         /* Pos in input buff to read new data into */
-        r->Xread = i;                 
+        r->Xread = i1;                 
         r->Xp = r->Xoff;
 
-        for(i=0; i < Nout; i++) { 
+        for(i1=0; i1 < Nout; i1++) { 
                 // orig: *obuf++ = r->Y[i] * ISCALE;
-                Float ftemp = r->Y[i] * ISCALE;
+                Float ftemp = r->Y[i1] * ISCALE;
 
                 if (ftemp > ST_SAMPLE_MAX)
                         *obuf = ST_SAMPLE_MAX;
