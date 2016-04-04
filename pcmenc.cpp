@@ -906,7 +906,7 @@ int main(int argc, char** argv)
 
 		if (dt1 == 0 || dt2 == 0 || dt3 == 0)
 		{
-			throw new std::invalid_argument("Invalid timings");
+			throw std::invalid_argument("Invalid timings");
 		}
 
 		if (filename.empty())
