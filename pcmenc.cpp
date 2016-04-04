@@ -143,65 +143,69 @@ public:
 double* resample(double* in , uint32_t inLen,  uint32_t inRate, 
                  uint32_t outRate, uint32_t* outLen)
 {
-    uint32_t outBufLen = (uint32_t)((double)inLen * outRate / inRate) + 500;
-
-    st_effect effp[1];
-
-    bool swap = needSwap();
-
-    st_sample_t* ibuf = (st_sample_t*)calloc(sizeof(st_sample_t), inLen);
-    st_sample_t* obuf = (st_sample_t*)calloc(sizeof(st_sample_t), outBufLen);
-
-    st_signalinfo_t iinfo = { inRate, 4, 0, 1, swap };
-    st_signalinfo_t oinfo = { outRate, 4, 0, 1, swap };
-
-    st_effect_t st_effect[1] = {
-        {"resample", ST_EFF_RATE,
+	// Configure the resampler
+    st_effect_t effect = 
+	{
+         "resample", 
+		 ST_EFF_RATE,
          st_resample_getopts, st_resample_start, st_resample_flow,
-         st_resample_drain, st_resample_stop}
+         st_resample_drain, st_resample_stop
     };
+	st_effect eff;
+	eff.h = &effect;
+	st_signalinfo_t iinfo = { inRate, 4, 0, 1, needSwap() };
+	st_signalinfo_t oinfo = { outRate, 4, 0, 1, needSwap() };
+	st_updateeffect(&eff, &iinfo, &oinfo, 0);
 
-    effp->h = st_effect;
-
-    st_updateeffect(effp, &iinfo, &oinfo, 0);
-
-    for (uint32_t i = 0; i < inLen; i++) {
+	// Convert to required format
+	st_sample_t* ibuf = (st_sample_t*)calloc(sizeof(st_sample_t), inLen);	
+	for (uint32_t i = 0; i < inLen; i++) 
+	{
         ibuf[i] = ST_FLOAT_DDWORD_TO_SAMPLE(in[i]);
     }
     char* argv[] = {"-ql"};
-    st_resample_getopts(effp, 1, argv);
-    st_resample_start(effp);
+    st_resample_getopts(&eff, 1, argv);
+    st_resample_start(&eff);
 
-    st_size_t iLen = 0;
-    st_size_t oLen = 0;
-
-    for(;;) {
+	// Allocate output buffer
+	uint32_t outBufLen = (uint32_t)((double)inLen * outRate / inRate) + 500;
+	st_sample_t* obuf = (st_sample_t*)calloc(sizeof(st_sample_t), outBufLen);
+	
+	// Pass samples into resampler
+	st_size_t iLen = 0;
+	st_size_t oLen = 0;
+	for(;;)
+	{
         st_size_t idone = ST_BUFSIZ;
         st_size_t odone = ST_BUFSIZ;
-        int rv = st_resample_flow(effp, ibuf + iLen, obuf + oLen, &idone, &odone);
+        int rv = st_resample_flow(&eff, ibuf + iLen, obuf + oLen, &idone, &odone);
         iLen += idone;
         oLen += odone; 
-        if (rv == ST_EOF || iLen + idone > inLen) {
+        if (rv == ST_EOF || iLen + idone > inLen) 
+		{
             break;
         }
     }
+	free(ibuf);
 
+	// Flush resampler
     st_size_t odone = ST_BUFSIZ;
-    st_resample_drain(effp, obuf + oLen, &odone);
+    st_resample_drain(&eff, obuf + oLen, &odone);
     oLen += odone; 
 
-    st_resample_stop(effp);
+    st_resample_stop(&eff);
 
+	// Convert back to double format
     double* outBuf = NULL;
-    if (oLen > 0) {
+    if (oLen > 0) 
+	{
         outBuf = (double*)calloc(sizeof(double), oLen);
-        for (uint32_t i = 0; i < oLen; i++) {
+        for (uint32_t i = 0; i < oLen; i++)
+		{
             outBuf[i] = ST_SAMPLE_TO_FLOAT_DDWORD(obuf[i]);
         }
         *outLen = (uint32_t)oLen;
     }
-
-    free(ibuf);
     free(obuf);
     
     return outBuf;
@@ -616,13 +620,16 @@ uint8_t* rleEncode(const uint8_t* buffer, int length, int incr, uint32_t* encLen
     int la[3] = {0, 0, 0};
     int ja[3] = {0, 1, 2};
 
-    for (int i = 3; i < length; i++) {
+    for (int i = 3; i < length; i++) 
+	{
         int x = i % 3;
 
-        if (A[x] == I[i] && la[x] < 15 - (incr - 1) && i < length - 3) {
+        if (A[x] == I[i] && la[x] < 15 - (incr - 1) && i < length - 3) 
+		{
             la[x] += incr;
         }
-        else {
+        else 
+		{
             s[ja[x]] = (uint8_t)(la[x] << 4 | A[x]);
             la[x] = 0;
             ja[x] = j++;
