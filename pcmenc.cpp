@@ -382,36 +382,33 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     printf("   dt2 = %d  (Normalized: %1.3f)\n", (int)idt2, dt[1]);
     printf("   dt3 = %d  (Normalized: %1.3f)\n", (int)idt3, dt[2]);
 
-    int     N = (length + samplesPerTriplet - 1) / samplesPerTriplet * 3;
-    double* x = new double[N];
+    int numOutputs = (length + samplesPerTriplet - 1) / samplesPerTriplet * 3;
+    double* x = new double[numOutputs];
 
-    int     nL,nR;
+	int numLeft;
+	int numRight;
 
-    switch (interpolation) {
+    switch (interpolation)
+	{
     case 0:
-        {
-            printf("   Resampling using Linear interpolation\n");
-            nL=0;
-            nR=1;
-        }
+        printf("   Resampling using Linear interpolation\n");
+        numLeft=0;
+        numRight=1;
         break;
     case 1:
-        {
-            printf("   Resampling using Quadratic interpolation\n");
-            nL=0;
-            nR=2;
-        }
+        printf("   Resampling using Quadratic interpolation\n");
+        numLeft=0;
+        numRight=2;
         break;
     case 2:
-    default:
-        {
-            printf("   Resampling using Lagrange interpolation on 11 points\n");
-            nL=-5;
-            nR=5;
-        }
+        printf("   Resampling using Lagrange interpolation on 11 points\n");
+        numLeft=-5;
+        numRight=5;
         break;
-    }
-    for (int i = 0; i < N / 3; i++) {
+	default:
+		throw std::invalid_argument("Invalid interpolation type");
+	}
+    for (int i = 0; i < numOutputs / 3; i++) {
         int     t0 = (samplesPerTriplet * i);
         double  t1 = (samplesPerTriplet * (i+dt[0]));
         double  t2 = (samplesPerTriplet * (i+dt[0]+dt[1]));
@@ -419,13 +416,13 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
         double  dt2 = t2-(int)t2;
 
         x[3*i+0] =  y[t0];
-        x[3*i+1] =  S(y,(int)t1,dt1,nL,nR);
-        x[3*i+2] =  S(y,(int)t2,dt2,nL,nR);
+        x[3*i+1] =  S(y,(int)t1,dt1,numLeft,numRight);
+        x[3*i+2] =  S(y,(int)t2,dt2,numLeft,numRight);
     }
 
     if (saveInternal) 
 	{
-		dump("x.bin", (uint8_t*)x, N * sizeof(double));
+		dump("x.bin", (uint8_t*)x, numOutputs * sizeof(double));
 		dump("y.bin", (uint8_t*)y, (length * 256) * sizeof(double));
     }
 
@@ -461,8 +458,8 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 
     for (int i = 0; i < 256; i++)
 	{
-        Stt[i] = new uint8_t[N];
-        Itt[i] = new uint8_t[N];
+        Stt[i] = new uint8_t[numOutputs];
+        Itt[i] = new uint8_t[numOutputs];
         L[i] = 0;
         St[i] = 1;
         It[i] = 1;
@@ -470,7 +467,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 
     printf("   Using cost function: L%d\n",costFunction);
 
-    for (int t = 0; t < N; t++) 
+    for (int t = 0; t < numOutputs; t++) 
 	{
         double Ln[256];
         for (int i = 0; i < 256; i++) 
@@ -480,7 +477,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 
         if (t % 1024 == 0) 
 		{
-            printf("Processing %3.2f%%\r", 100. * t / N);
+            printf("Processing %3.2f%%\r", 100. * t / numOutputs);
         }
 
 		for (int i = 0; i < 16 * 16 * 16; ++i)
@@ -541,28 +538,28 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 
     printf("\nThe cost metric in Viterbi is about %3.3f\n\n", L[minIndex]);
 
-    uint8_t* P = new uint8_t[N];
-    uint8_t* I = new uint8_t[N];
+    uint8_t* P = new uint8_t[numOutputs];
+    uint8_t* I = new uint8_t[numOutputs];
 
-    P[N - 1] = Stt[minIndex][N - 1];
-    I[N - 1] = Itt[minIndex][N - 1];
-    for (int t = N - 2; t >= 0; t--)
+    P[numOutputs - 1] = Stt[minIndex][numOutputs - 1];
+    I[numOutputs - 1] = Itt[minIndex][numOutputs - 1];
+    for (int t = numOutputs - 2; t >= 0; t--)
 	{
         P[t] = Stt[P[t + 1]][t];
         I[t] = Itt[P[t + 1]][t];
     }
 
 
-    double* V = new double[N];
+    double* V = new double[numOutputs];
     
-    for (int t = 0; t <N; t++)
+    for (int t = 0; t <numOutputs; t++)
 	{
 		V[t] = curV[P[t] << 4 | I[t]];
     }
 
     if (saveInternal)
 	{
-		dump("v.bin", (uint8_t*)V, N * sizeof(double));
+		dump("v.bin", (uint8_t*)V, numOutputs * sizeof(double));
     }    
 
 
@@ -571,7 +568,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     double en = 0;
     double er = 0;
     double mi = 0;    
-    for (int i = 0; i < N / 3; i++)
+    for (int i = 0; i < numOutputs / 3; i++)
 	{
         en += (x[3 * i + 0]) * (x[3 * i + 0]) * dt[0] +
               (x[3 * i + 1]) * (x[3 * i + 1]) * dt[1] +
@@ -582,7 +579,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
         mi += (x[3 * i + 0]) * dt[0] + (x[3 * i + 1]) * dt[1] + (x[3 * i + 2]) * dt[2];
     }
     
-    double  var = en - mi*mi*3/N;
+    double  var = en - mi*mi*3/numOutputs;
     printf("SNR is about %3.2f\n", 10 * log10( var / er ));
 
     delete [] y;
@@ -596,7 +593,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 		delete[] Itt[i];
     }
 
-    *binSize = N;
+    *binSize = numOutputs;
     return I;
 }
 
@@ -751,32 +748,35 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int incr, ui
 // Converts a wav file to PSG binary format. The method can do both a
 // consecutive buffer or a buffer split in multiple 8kB buffers
 //
-int convertWav(const std::string& filename, int saveInternal, int costFunction, int interpolation,
+void convertWav(const std::string& filename, int saveInternal, int costFunction, int interpolation,
                uint32_t cpuFrequency, uint32_t dt1, uint32_t dt2, uint32_t dt3, 
                int encodingType, int ratio, double amplitude, int romSplit, int packingType)
 {
-    if (encodingType != 0) {
-        printf("Encoding type %d not supported\n", encodingType);
+    if (encodingType != 0)
+	{
+		throw std::invalid_argument("Encoding type not supported");
     }
     // Load samples from wav file
-    if (ratio < 1) {
-        printf("Invalid number of inputs per output\n");
-        return 0;
+    if (ratio < 1) 
+	{
+		throw std::invalid_argument("Invalid number of inputs per output");
     }
     uint32_t count;
     uint32_t frequency = cpuFrequency * ratio / (dt1 + dt2 + dt3);
-    if (frequency == 0) {
-        printf("Invalid frequency\n");
-        return 0;
+    if (frequency == 0) 
+	{
+		throw std::invalid_argument("Invalid frequency");
     }
 
     printf("Encoding PSG samples at %dHz\n", (int)frequency);
 
+	printf("Loading %s...", filename.c_str());
     double* samples = loadSamples(filename, frequency, &count);
-    if (samples == NULL) {
-        printf("Failed to load wav file: %s\n", filename.c_str());
-        return 0;
+    if (samples == NULL)
+	{
+		throw std::runtime_error("Failed to load wav file");
     }
+	printf("done\n");
     
     // Do viterbi encoding
     uint32_t binSize = 0;
@@ -788,7 +788,8 @@ int convertWav(const std::string& filename, int saveInternal, int costFunction, 
     uint8_t* destBuffer = 0;
     uint32_t destLength = 0;
 
-    switch (packingType) {
+    switch (packingType) 
+	{
     case 0: //4 bit RLE
         destBuffer = rlePack(binBuffer, binSize, romSplit, 1, &destLength);
         break;
@@ -807,8 +808,6 @@ int convertWav(const std::string& filename, int saveInternal, int costFunction, 
     saveEncodedBuffer(filename + ".pcmenc", destBuffer, destLength);
     delete [] destBuffer;
     delete [] binBuffer;
-
-    return 1;
 }
 
 
@@ -818,198 +817,207 @@ int convertWav(const std::string& filename, int saveInternal, int costFunction, 
 int main(int argc, char** argv)
 {
 	std::string filename;
-    int romSplit = 0;
-    int saveInternal = 0;    
-    int packingType = 0;  // 0=RLE, 1=TEST
-    int encodingType = 0;
-    int ratio = 1;
-    int interpolation = 2;
-    int costFunction = 2;
-    uint32_t cpuFrequency = 3579545;
-    uint32_t amplitude = 115;
-    uint32_t dt1 = (uint32_t)-1;
-    uint32_t dt2 = (uint32_t)-1;
-    uint32_t dt3 = (uint32_t)-1;
+	int romSplit = 0;
+	int saveInternal = 0;
+	int packingType = 0;  // 0=RLE, 1=TEST
+	int encodingType = 0;
+	int ratio = 1;
+	int interpolation = 2;
+	int costFunction = 2;
+	uint32_t cpuFrequency = 3579545;
+	uint32_t amplitude = 115;
+	uint32_t dt1 = (uint32_t)-1;
+	uint32_t dt2 = (uint32_t)-1;
+	uint32_t dt3 = (uint32_t)-1;
 
-    // Parse command line options
-    for (int i = 1; i < argc; i++) {
-        if (0 == strcmp(argv[i], "-cpuf") || 0 == strcmp(argv[i], "/cpuf")) {
-            if (++i >= argc) {
-                filename.clear();
-                break;
-            }
-            cpuFrequency = atoi(argv[i]);
-        }
-        else if (0 == strcmp(argv[i], "-a") || 0 == strcmp(argv[i], "/a")) {
-            if (++i >= argc) {
+	// Parse command line options
+	for (int i = 1; i < argc; i++) {
+		if (0 == strcmp(argv[i], "-cpuf") || 0 == strcmp(argv[i], "/cpuf")) {
+			if (++i >= argc) {
 				filename.clear();
 				break;
-            }
-            amplitude = atoi(argv[i]);
-        }
-        else if (0 == strcmp(argv[i], "-dt1") || 0 == strcmp(argv[i], "/dt1")) {
-            if (++i >= argc) {
+			}
+			cpuFrequency = atoi(argv[i]);
+		}
+		else if (0 == strcmp(argv[i], "-a") || 0 == strcmp(argv[i], "/a")) {
+			if (++i >= argc) {
 				filename.clear();
 				break;
-            }
-            dt1 = atoi(argv[i]);
-        }
-        else if (0 == strcmp(argv[i], "-dt2") || 0 == strcmp(argv[i], "/dt2")) {
-            if (++i >= argc) {
-                filename.clear();
-                break;
-            }
-            dt2 = atoi(argv[i]);
-        }
-        else if (0 == strcmp(argv[i], "-dt3") || 0 == strcmp(argv[i], "/dt3")) {
-            if (++i >= argc) {
-                filename.clear();
-                break;
-            }
-            dt3 = atoi(argv[i]);
-        }
-        else if (0 == strcmp(argv[i], "-e") || 0 == strcmp(argv[i], "/e")) {
-            if (++i >= argc) {
-                filename.clear();
-                break;
-            }
-            encodingType = atoi(argv[i]);
-        }
-        else if (0 == strcmp(argv[i], "-rto") || 0 == strcmp(argv[i], "/rto")) {
-            if (++i >= argc) {
-                filename.clear();
-                break;
-            }
-            ratio = atoi(argv[i]);
-        }
-        else if (0 == strcmp(argv[i], "-r") || 0 == strcmp(argv[i], "/r")) {
-            romSplit = 1;
-        }
-        else if (0 == strcmp(argv[i], "-si") || 0 == strcmp(argv[i], "/si")) {
-            saveInternal = 1;
-        }
-        else if (0 == strcmp(argv[i], "-p") || 0 == strcmp(argv[i], "/p")) {
-            if (++i >= argc) {
-                filename.clear();
-                break;
-            }
-            packingType = atoi(argv[i]);
-        }
-        else if (0 == strcmp(argv[i], "-c") || 0 == strcmp(argv[i], "/c")) {
-            if (++i >= argc) {
-                filename.clear();
-                break;
-            }
-            costFunction = atoi(argv[i]);
-        }
-        else if (0 == strcmp(argv[i], "-i") || 0 == strcmp(argv[i], "/i")) {
-            if (++i >= argc) {
-                filename.clear();
-                break;
-            }
-            interpolation = atoi(argv[i]);
-        }
-        else if (filename.empty() && argv[i][0] != '-') {
-            filename = argv[i];
-        }
-        else {
-            filename.clear();
-            break;
-        }
-    }
+			}
+			amplitude = atoi(argv[i]);
+		}
+		else if (0 == strcmp(argv[i], "-dt1") || 0 == strcmp(argv[i], "/dt1")) {
+			if (++i >= argc) {
+				filename.clear();
+				break;
+			}
+			dt1 = atoi(argv[i]);
+		}
+		else if (0 == strcmp(argv[i], "-dt2") || 0 == strcmp(argv[i], "/dt2")) {
+			if (++i >= argc) {
+				filename.clear();
+				break;
+			}
+			dt2 = atoi(argv[i]);
+		}
+		else if (0 == strcmp(argv[i], "-dt3") || 0 == strcmp(argv[i], "/dt3")) {
+			if (++i >= argc) {
+				filename.clear();
+				break;
+			}
+			dt3 = atoi(argv[i]);
+		}
+		else if (0 == strcmp(argv[i], "-e") || 0 == strcmp(argv[i], "/e")) {
+			if (++i >= argc) {
+				filename.clear();
+				break;
+			}
+			encodingType = atoi(argv[i]);
+		}
+		else if (0 == strcmp(argv[i], "-rto") || 0 == strcmp(argv[i], "/rto")) {
+			if (++i >= argc) {
+				filename.clear();
+				break;
+			}
+			ratio = atoi(argv[i]);
+		}
+		else if (0 == strcmp(argv[i], "-r") || 0 == strcmp(argv[i], "/r")) {
+			romSplit = 1;
+		}
+		else if (0 == strcmp(argv[i], "-si") || 0 == strcmp(argv[i], "/si")) {
+			saveInternal = 1;
+		}
+		else if (0 == strcmp(argv[i], "-p") || 0 == strcmp(argv[i], "/p")) {
+			if (++i >= argc) {
+				filename.clear();
+				break;
+			}
+			packingType = atoi(argv[i]);
+		}
+		else if (0 == strcmp(argv[i], "-c") || 0 == strcmp(argv[i], "/c")) {
+			if (++i >= argc) {
+				filename.clear();
+				break;
+			}
+			costFunction = atoi(argv[i]);
+		}
+		else if (0 == strcmp(argv[i], "-i") || 0 == strcmp(argv[i], "/i")) {
+			if (++i >= argc) {
+				filename.clear();
+				break;
+			}
+			interpolation = atoi(argv[i]);
+		}
+		else if (filename.empty() && argv[i][0] != '-') {
+			filename = argv[i];
+		}
+		else {
+			filename.clear();
+			break;
+		}
+	}
 
-    // Set defaults for dt depending on encoding type
-    switch (ratio) {
-    default:
-    case 0:
-        dt1 = dt1 != (uint32_t)-1 ? dt1 : 32;
-        dt2 = dt2 != (uint32_t)-1 ? dt2 : 27;
-        dt3 = dt3 != (uint32_t)-1 ? dt3 : 266;
-        break;
-    case 1:
-        dt1 = dt1 != (uint32_t)-1 ? dt1 : 156;
-        dt2 = dt2 != (uint32_t)-1 ? dt2 : 27;
-        dt3 = dt3 != (uint32_t)-1 ? dt3 : 141;
-        break;
-    case 2:
-        dt1 = dt1 != (uint32_t)-1 ? dt1 : 73;
-        dt2 = dt2 != (uint32_t)-1 ? dt2 : 84;
-        dt3 = dt3 != (uint32_t)-1 ? dt3 : 87;
-        break;
-    }
+	// Set defaults for dt depending on encoding type
+	switch (ratio) {
+	default:
+	case 0:
+		dt1 = dt1 != (uint32_t)-1 ? dt1 : 32;
+		dt2 = dt2 != (uint32_t)-1 ? dt2 : 27;
+		dt3 = dt3 != (uint32_t)-1 ? dt3 : 266;
+		break;
+	case 1:
+		dt1 = dt1 != (uint32_t)-1 ? dt1 : 156;
+		dt2 = dt2 != (uint32_t)-1 ? dt2 : 27;
+		dt3 = dt3 != (uint32_t)-1 ? dt3 : 141;
+		break;
+	case 2:
+		dt1 = dt1 != (uint32_t)-1 ? dt1 : 73;
+		dt2 = dt2 != (uint32_t)-1 ? dt2 : 84;
+		dt3 = dt3 != (uint32_t)-1 ? dt3 : 87;
+		break;
+	}
 
-    if (dt1 + dt2 + dt3 == 0 || cpuFrequency == 0) 
+	if (dt1 + dt2 + dt3 == 0 || cpuFrequency == 0)
 	{
-        filename.clear();
-    }
+		filename.clear();
+	}
 
-    if (filename.empty()) 
+	if (filename.empty())
 	{
-        printf("Usage:\n");
-        printf("pcmenc.exe [-r] [-e <encoding>] [-cpuf <freq>] [-p <packing>]\n");
-        printf("           [-dt1 <tstates>] [-dt2 <tstates>] [-dt3 <tstates>]\n");
-        printf("           [-a <amplitude>] [-rto <ratio>] <wavfile>\n");
-        printf("\n");
-        printf("    -r              Pack encoded wave into 8kB blocks for rom replayers\n");
-        printf("\n");
-        printf("    -p <packing>    Packing type:                b7...b5|b4...b0\n");
-        printf("                        0 = 4bit RLE (default)   run len|PSG vol\n");
-        printf("                        1 = 3 bit RLE; as before but b5 =0\n");
-        printf("                        1 = 1 byte vol\n");
-        printf("                        2 = 1 byte {ch, vol} pairs\n");
-        printf("\n");
-        printf("    -cpuf <freq>    CPU frequency of the CPU (Hz)\n");
-        printf("                        Default: 3579545\n");
-        printf("\n");
-        printf("    -dt1 <tstates>  CPU Cycles between update of channel A and B\n");
-        printf("    -dt2 <tstates>  CPU Cycles between update of channel B and C\n");
-        printf("    -dt3 <tstates>  CPU Cycles between update of channel C and A\n");
-        printf("                    The replayer sampling base period is \n");
-        printf("                          T = dt1+dt2+dt3\n");
-        printf("                    Defaults (depends on rto):\n");
-        printf("                        ratio = 1 : dt1=32, dt2=27,  dt3=266 => 11014Hz\n");
-        printf("                        ratio = 2 : dt1=156,dt2=27,  dt3=141 => 22096Hz \n");
-        printf("                        ratio = 3 : dt1=73, dt2=84,  dt3=87  => 44011Hz\n");
-        printf("\n");
-        printf("                    Note that the replayed sampling base period depends\n");
-        printf("                    on the replayer and how many samples it will play\n");
-        printf("                    in each PSG tripplet update. The default settings\n");
-        printf("                    are based on:\n");
-        printf("                        1 : replayer_core11025 which plays one sample per\n");
-        printf("                            psg tripplet update\n");
-        printf("                        2 : replayer_core22050 which plays two sample per\n");
-        printf("                            psg tripplet update\n");
-        printf("                        3 : replayer_core44100 which plays three sample\n");
-        printf("                            per psg tripplet update \n");
-        printf("\n");
-        printf("    -a <amplitude>  Input amplitude before encoding.\n");
-        printf("                        Default 115\n");
-        printf("\n");
-        printf("    -rto <ratio>   Number of input samples per PSG triplet\n");
-        printf("                        Default: 1\n");
-        printf("\n");
-        printf("                   This parameter can be used to oversample the input\n");
-        printf("                   wave. Note that this parameter also will affect the\n");
-        printf("                   replay rate based on how many samples per PSG tripplet\n");
-        printf("                   update the replayer uses.\n");
-        printf("\n");
-        printf("    -c <costfun>    Viterbi cost function:\n");
-        printf("                        1   : ABS measure\n");
-        printf("                        2   : Standard MSE (default)\n");
-        printf("                        > 2 : Lagrange interpolation of order 'c'\n");
-        printf("\n");
-        printf("    -i <interpol>   Resampling interpolation mode:\n");
-        printf("                        0 = Linear interpolation\n");
-        printf("                        1 = Quadratic interpolation\n");
-        printf("                        2 = Lagrange interpolation (default)\n");
-        printf("\n");
-        printf("    <wavfile>       Filename of .wav file to encode\n");
-        printf("\n");
+		printf("Usage:\n");
+		printf("pcmenc.exe [-r] [-e <encoding>] [-cpuf <freq>] [-p <packing>]\n");
+		printf("           [-dt1 <tstates>] [-dt2 <tstates>] [-dt3 <tstates>]\n");
+		printf("           [-a <amplitude>] [-rto <ratio>] <wavfile>\n");
+		printf("\n");
+		printf("    -r              Pack encoded wave into 8kB blocks for rom replayers\n");
+		printf("\n");
+		printf("    -p <packing>    Packing type:                b7...b5|b4...b0\n");
+		printf("                        0 = 4bit RLE (default)   run len|PSG vol\n");
+		printf("                        1 = 3 bit RLE; as before but b5 =0\n");
+		printf("                        1 = 1 byte vol\n");
+		printf("                        2 = 1 byte {ch, vol} pairs\n");
+		printf("\n");
+		printf("    -cpuf <freq>    CPU frequency of the CPU (Hz)\n");
+		printf("                        Default: 3579545\n");
+		printf("\n");
+		printf("    -dt1 <tstates>  CPU Cycles between update of channel A and B\n");
+		printf("    -dt2 <tstates>  CPU Cycles between update of channel B and C\n");
+		printf("    -dt3 <tstates>  CPU Cycles between update of channel C and A\n");
+		printf("                    The replayer sampling base period is \n");
+		printf("                          T = dt1+dt2+dt3\n");
+		printf("                    Defaults (depends on rto):\n");
+		printf("                        ratio = 1 : dt1=32, dt2=27,  dt3=266 => 11014Hz\n");
+		printf("                        ratio = 2 : dt1=156,dt2=27,  dt3=141 => 22096Hz \n");
+		printf("                        ratio = 3 : dt1=73, dt2=84,  dt3=87  => 44011Hz\n");
+		printf("\n");
+		printf("                    Note that the replayed sampling base period depends\n");
+		printf("                    on the replayer and how many samples it will play\n");
+		printf("                    in each PSG tripplet update. The default settings\n");
+		printf("                    are based on:\n");
+		printf("                        1 : replayer_core11025 which plays one sample per\n");
+		printf("                            psg tripplet update\n");
+		printf("                        2 : replayer_core22050 which plays two sample per\n");
+		printf("                            psg tripplet update\n");
+		printf("                        3 : replayer_core44100 which plays three sample\n");
+		printf("                            per psg tripplet update \n");
+		printf("\n");
+		printf("    -a <amplitude>  Input amplitude before encoding.\n");
+		printf("                        Default 115\n");
+		printf("\n");
+		printf("    -rto <ratio>   Number of input samples per PSG triplet\n");
+		printf("                        Default: 1\n");
+		printf("\n");
+		printf("                   This parameter can be used to oversample the input\n");
+		printf("                   wave. Note that this parameter also will affect the\n");
+		printf("                   replay rate based on how many samples per PSG tripplet\n");
+		printf("                   update the replayer uses.\n");
+		printf("\n");
+		printf("    -c <costfun>    Viterbi cost function:\n");
+		printf("                        1   : ABS measure\n");
+		printf("                        2   : Standard MSE (default)\n");
+		printf("                        > 2 : Lagrange interpolation of order 'c'\n");
+		printf("\n");
+		printf("    -i <interpol>   Resampling interpolation mode:\n");
+		printf("                        0 = Linear interpolation\n");
+		printf("                        1 = Quadratic interpolation\n");
+		printf("                        2 = Lagrange interpolation (default)\n");
+		printf("\n");
+		printf("    <wavfile>       Filename of .wav file to encode\n");
+		printf("\n");
 
-        return 0;
-    }
+		return 0;
+	}
 
-    return convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, encodingType, ratio, (double)amplitude / 100, romSplit, packingType);
+	try
+	{
+		convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, encodingType, ratio, (double)amplitude / 100, romSplit, packingType);
+		return 1;
+	}
+	catch (std::exception& e)
+	{
+		printf("%s\n", e.what());
+		return 0;
+	}
 }
 
 
