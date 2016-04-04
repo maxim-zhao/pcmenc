@@ -143,8 +143,7 @@ public:
 // Resamples a sample from inRate to outRate and returns a new buffer with
 // the resampled data and the length of the new buffer.
 //
-double* resample(double* in , uint32_t inLen,  uint32_t inRate, 
-                 uint32_t outRate, uint32_t* outLen)
+double* resample(double* in, uint32_t inLen, uint32_t inRate, uint32_t outRate, uint32_t& outLen)
 {
 	// Configure the resampler
     st_effect_t effect = 
@@ -207,7 +206,7 @@ double* resample(double* in , uint32_t inLen,  uint32_t inRate,
 		{
             outBuf[i] = ST_SAMPLE_TO_FLOAT_DDWORD(obuf[i]);
         }
-        *outLen = (uint32_t)oLen;
+        outLen = (uint32_t)oLen;
     }
     delete [] obuf;
     
@@ -218,7 +217,7 @@ double* resample(double* in , uint32_t inLen,  uint32_t inRate,
 //////////////////////////////////////////////////////////////////////////////
 // Loads a wav file and creates a new buffer with sample data.
 //
-double* loadSamples(const std::string& filename, uint32_t wantedFrequency, uint32_t* count)
+double* loadSamples(const std::string& filename, uint32_t wantedFrequency, uint32_t& count)
 {
 	FileReader f(filename);
 
@@ -300,7 +299,7 @@ double* loadSamples(const std::string& filename, uint32_t wantedFrequency, uint3
 	{
         retSamples = new double[sampleNum];
         memcpy(retSamples, tempSamples, sampleNum * sizeof(double));
-        *count = sampleNum;
+        count = sampleNum;
     }
     else 
 	{
@@ -329,7 +328,7 @@ void dump(const std::string filename, const uint8_t* pData, int byteCount)
 uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples, int length, 
                uint32_t idt1, uint32_t idt2, uint32_t idt3, 
                int interpolation, int costFunction,
-               int saveInternal, uint32_t* binSize)
+               int saveInternal, uint32_t& binSize)
 {
     double* y = new double[length + 256];
 
@@ -456,8 +455,8 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     uint8_t* Stt[256];
     uint8_t* Itt[256];
     double L[256];
-    uint8_t  St[256];
-    uint8_t  It[256];
+    uint8_t St[256];
+    uint8_t It[256];
 
     for (int i = 0; i < 256; i++)
 	{
@@ -585,18 +584,18 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     double  var = en - mi*mi*3/numOutputs;
     printf("SNR is about %3.2f\n", 10 * log10( var / er ));
 
-    delete [] y;
-	delete[] x;
-	delete[] P;
-	delete[] V;
-       
-    for (int i = 0; i < 256; i++)
-	{
-		delete[] Stt[i];
-		delete[] Itt[i];
-    }
+	delete [] y;
+	delete [] x;
+	delete [] P;
+	delete [] V;
 
-    *binSize = numOutputs;
+	for (int i = 0; i < 256; i++)
+	{
+		delete [] Stt[i];
+		delete [] Itt[i];
+	}
+
+    binSize = numOutputs;
     return I;
 }
 
@@ -779,7 +778,7 @@ void convertWav(const std::string& filename, int saveInternal, int costFunction,
     printf("Encoding PSG samples at %dHz\n", (int)frequency);
 
 	printf("Loading %s...", filename.c_str());
-    double* samples = loadSamples(filename, frequency, &count);
+    double* samples = loadSamples(filename, frequency, count);
     if (samples == NULL)
 	{
 		throw std::runtime_error("Failed to load wav file");
@@ -787,9 +786,9 @@ void convertWav(const std::string& filename, int saveInternal, int costFunction,
 	printf("done\n");
     
     // Do viterbi encoding
-    uint32_t binSize = 0;
+    uint32_t binSize;
     uint8_t* binBuffer = viterbi(ratio, amplitude, samples, count, dt1, dt2, dt3, 
-                               interpolation, costFunction, saveInternal, &binSize);
+                               interpolation, costFunction, saveInternal, binSize);
 
     // RLE encode the buffer. Either as one consecutive RLE encoded
     // buffer, or as 8kB small buffers, each RLE encoded with header.
