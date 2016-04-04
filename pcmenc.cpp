@@ -344,7 +344,7 @@ void dump(const std::string filename, const uint8_t* pData, int byteCount)
 uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples, int length, 
                uint32_t idt1, uint32_t idt2, uint32_t idt3, 
                InterpolationType interpolation, int costFunction,
-               int saveInternal, uint32_t& binSize)
+               bool saveInternal, uint32_t& binSize)
 {
     double* y = new double[length + 256];
 
@@ -777,7 +777,7 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int inc
 // Converts a wav file to PSG binary format. The method can do both a
 // consecutive buffer or a buffer split in multiple 8kB buffers
 //
-void convertWav(const std::string& filename, int saveInternal, int costFunction, InterpolationType interpolation,
+void convertWav(const std::string& filename, bool saveInternal, int costFunction, InterpolationType interpolation,
                uint32_t cpuFrequency, uint32_t dt1, uint32_t dt2, uint32_t dt3, 
                int ratio, double amplitude, uint32_t romSplit, PackingType packingType)
 {
