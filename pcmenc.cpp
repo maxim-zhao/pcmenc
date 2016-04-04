@@ -25,14 +25,10 @@
 #include <cmath>
 #include <algorithm>
 #include <stdlib.h>
-#include <ctime>
-
-typedef unsigned char  UInt8;
-typedef unsigned short UInt16;
-typedef unsigned long  UInt32;
-typedef   signed char  Int8;
-typedef   signed short Int16;
-typedef   signed long  Int32;
+#include <string>
+#include <fstream>
+#include <iterator>
+#include <cstdint>
 
 // Minimum allowed frequency difference for not doing frequency conversion
 #define MIN_ALLOWED_FREQ_DIFF 0.005
@@ -41,8 +37,8 @@ typedef   signed long  Int32;
 #define MAX(a,b) fmax(a, b) // Beats std::max, same as ?:
 #define ABS(a)   std::abs(a) // Beats fabs, ?:
 
-#define str2ul(s) ((UInt32)s[0]<<0|(UInt32)s[1]<<8|(UInt32)s[2]<<16|(UInt32)s[3]<<24)
-#define needSwap() (*(UInt32*)"A   " == 0x41202020)
+#define str2ul(s) ((uint32_t)s[0]<<0|(uint32_t)s[1]<<8|(uint32_t)s[2]<<16|(uint32_t)s[3]<<24)
+#define needSwap() (*(uint32_t*)"A   " == 0x41202020)
 
 /* Lagrange's classical polynomial interpolation */
 static double S(const double y[], int i, double dt,int L,int R)
@@ -64,23 +60,11 @@ static double S(const double y[], int i, double dt,int L,int R)
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// Reads one byte from a file and convert from wav file endian to host endian
-//
-int fileReadUInt8(FILE* f, UInt8* val) {
-    UInt8 v;
-    if (1 != fread(&v, sizeof(UInt8), 1, f)) {
-        return 0;
-    }
-    *val = v;
-    return 1;
-}
-
-//////////////////////////////////////////////////////////////////////////////
 // Reads two bytes from a file and convert from wav file endian to host endian
 //
-int fileReadUInt16(FILE* f, UInt16* val) {
-    UInt16 v;
-    if (1 != fread(&v, sizeof(UInt16), 1, f)) {
+int fileReadUInt16(FILE* f, uint16_t* val) {
+    uint16_t v;
+    if (1 != fread(&v, sizeof(uint16_t), 1, f)) {
         return 0;
     }
     if (needSwap()) {
@@ -93,9 +77,9 @@ int fileReadUInt16(FILE* f, UInt16* val) {
 //////////////////////////////////////////////////////////////////////////////
 // Reads four bytes from a file and convert from wav file endian to host endian
 //
-int fileReadUInt32(FILE* f, UInt32* val) {
-    UInt32 v;
-    if (1 != fread(&v, sizeof(UInt32), 1, f)) {
+int fileReadUInt32(FILE* f, uint32_t* val) {
+    uint32_t v;
+    if (1 != fread(&v, sizeof(uint32_t), 1, f)) {
         return 0;
     }
     if (needSwap()) {
@@ -108,7 +92,7 @@ int fileReadUInt32(FILE* f, UInt32* val) {
 
 #ifdef NO_RESAMPLING
 
-double* resample(double* in , UInt32 inLen,  UInt32 inRate, UInt32 outRate, UInt32* outLen)
+double* resample(double* in , uint32_t inLen,  uint32_t inRate, uint32_t outRate, uint32_t* outLen)
 {
     printf("Resampling not supported\n");
     return NULL;
@@ -122,10 +106,10 @@ double* resample(double* in , UInt32 inLen,  UInt32 inRate, UInt32 outRate, UInt
 // Resamples a sample from inRate to outRate and returns a new buffer with
 // the resampled data and the length of the new buffer.
 //
-double* resample(double* in , UInt32 inLen,  UInt32 inRate, 
-                 UInt32 outRate, UInt32* outLen)
+double* resample(double* in , uint32_t inLen,  uint32_t inRate, 
+                 uint32_t outRate, uint32_t* outLen)
 {
-    UInt32 outBufLen = (UInt32)((double)inLen * outRate / inRate) + 500;
+    uint32_t outBufLen = (uint32_t)((double)inLen * outRate / inRate) + 500;
 
     st_effect effp[1];
 
@@ -147,7 +131,7 @@ double* resample(double* in , UInt32 inLen,  UInt32 inRate,
 
     st_updateeffect(effp, &iinfo, &oinfo, 0);
 
-    for (UInt32 i = 0; i < inLen; i++) {
+    for (uint32_t i = 0; i < inLen; i++) {
         ibuf[i] = ST_FLOAT_DDWORD_TO_SAMPLE(in[i]);
     }
     char* argv[] = {"-ql"};
@@ -177,10 +161,10 @@ double* resample(double* in , UInt32 inLen,  UInt32 inRate,
     double* outBuf = NULL;
     if (oLen > 0) {
         outBuf = (double*)calloc(sizeof(double), oLen);
-        for (UInt32 i = 0; i < oLen; i++) {
+        for (uint32_t i = 0; i < oLen; i++) {
             outBuf[i] = ST_SAMPLE_TO_FLOAT_DDWORD(obuf[i]);
         }
-        *outLen = (UInt32)oLen;
+        *outLen = (uint32_t)oLen;
     }
 
     free(ibuf);
@@ -194,54 +178,54 @@ double* resample(double* in , UInt32 inLen,  UInt32 inRate,
 //////////////////////////////////////////////////////////////////////////////
 // Loads a wav file and creates a new buffer with sample data.
 //
-double* loadSamples(const char* filename, UInt32 wantedFrequency, UInt32* count)
+double* loadSamples(const std::string& filename, uint32_t wantedFrequency, uint32_t* count)
 {
-    FILE* f = fopen(filename, "rb");
+    FILE* f = fopen(filename.c_str(), "rb");
     if (f == NULL) {
         return NULL;
     }
 
     int success = 1;
 
-    UInt32 riff;
+    uint32_t riff;
     success &= fileReadUInt32(f, &riff);
     success &= riff == str2ul("RIFF") ? 1 : 0;
 
-    UInt32 riffSize;
+    uint32_t riffSize;
     success &= fileReadUInt32(f, &riffSize);
     fseek(f, 0, SEEK_END);
-    success &= riffSize == (UInt32)ftell(f) - 8 ? 1 : 0;
+    success &= riffSize == (uint32_t)ftell(f) - 8 ? 1 : 0;
     fseek(f, 8, SEEK_SET);
 
-    UInt32 wave;
+    uint32_t wave;
     success &= fileReadUInt32(f, &wave);
     success &= wave == str2ul("WAVE") ? 1 : 0;
 
-    UInt32 fmt;
+    uint32_t fmt;
     success &= fileReadUInt32(f, &fmt);
     success &= fmt == str2ul("fmt ") ? 1 : 0;
 
-    UInt32 chunkSize;
+    uint32_t chunkSize;
     success &= fileReadUInt32(f, &chunkSize);
 
-    UInt16 formatType;
+    uint16_t formatType;
     success &= fileReadUInt16(f, &formatType);
     success &= formatType == 0 || formatType == 1 ? 1 : 0;
 
-    UInt16 channels;
+    uint16_t channels;
     success &= fileReadUInt16(f, &channels);
     success &= channels == 1 || channels == 2;
 
-    UInt32 samplesPerSec;
+    uint32_t samplesPerSec;
     success &= fileReadUInt32(f, &samplesPerSec);
 
-    UInt32 avgBytesPerSec;
+    uint32_t avgBytesPerSec;
     success &= fileReadUInt32(f, &avgBytesPerSec);
 
-    UInt16 blockAlign;
+    uint16_t blockAlign;
     success &= fileReadUInt16(f, &blockAlign);
 
-    UInt16 bitsPerSample;
+    uint16_t bitsPerSample;
     success &= fileReadUInt16(f, &bitsPerSample);
     if (bitsPerSample & 0x07) {
         printf("Only supports 8, 16, 24, and 32 bits per sample\n");
@@ -249,7 +233,7 @@ double* loadSamples(const char* filename, UInt32 wantedFrequency, UInt32* count)
     }
 
     while (success) {
-        UInt32 data;
+        uint32_t data;
         success &= fileReadUInt32(f, &data);
         if (data == str2ul("data")) {
             break;
@@ -257,10 +241,10 @@ double* loadSamples(const char* filename, UInt32 wantedFrequency, UInt32* count)
         fseek(f, -3, SEEK_CUR);
     }
 
-    UInt32 dataSize;
+    uint32_t dataSize;
     success &= fileReadUInt32(f, &dataSize);
-    UInt32 bytesPerSample = ((bitsPerSample + 7) / 8);
-    UInt32 sampleNum = dataSize / bytesPerSample / channels;
+    uint32_t bytesPerSample = ((bitsPerSample + 7) / 8);
+    uint32_t sampleNum = dataSize / bytesPerSample / channels;
 
     if (!success) {
         fclose(f);
@@ -269,18 +253,18 @@ double* loadSamples(const char* filename, UInt32 wantedFrequency, UInt32* count)
 
     double* tempSamples = (double*)calloc(sizeof(double), sampleNum);
 
-    for (UInt32 i = 0; success && i < sampleNum; i++) {
+    for (uint32_t i = 0; success && i < sampleNum; i++) {
         double value = 0;
         for (int c = 0; c < channels; c++) {
             if (bytesPerSample == 1) {
-                UInt8 val;
+                uint8_t val;
                 success &= 1 == fread(&val, 1, 1, f);
                 value += ((int)val - 0x80) / 128. / channels;
             }
             else {
-                UInt32 val = 0;
-                for (UInt32 j = 0; j < bytesPerSample; j++) {
-                    UInt8 tmp;
+                uint32_t val = 0;
+                for (uint32_t j = 0; j < bytesPerSample; j++) {
+                    uint8_t tmp;
                     success &= 1 == fread(&tmp, 1, 1, f);
                     val = (val >> 8) | (tmp << 24);
                 }
@@ -318,10 +302,10 @@ double* loadSamples(const char* filename, UInt32 wantedFrequency, UInt32* count)
 // Encodes sample data to be played on the PSG.
 // The output buffer needs to be three times the size of the input buffer
 //
-UInt8* viterbi(int samplesPerTriplet, double amplitude, const double* samples, int length, 
-               UInt32 idt1, UInt32 idt2, UInt32 idt3, 
+uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples, int length, 
+               uint32_t idt1, uint32_t idt2, uint32_t idt3, 
                int interpolation, int costFunction,
-               int saveInternal, UInt32* binSize)
+               int saveInternal, uint32_t* binSize)
 {
     double* y = (double*)calloc(sizeof(double), length + 256);
 
@@ -428,11 +412,11 @@ UInt8* viterbi(int samplesPerTriplet, double amplitude, const double* samples, i
         fclose(f2);
     }
 
-	UInt8 nxtS[16*16*16];
+	uint8_t nxtS[16*16*16];
 	for (int i = 0; i < 16; i++) {
 		for (int j = 0; j < 16; j++) {
 			for (int in = 0; in < 16; in++) {
-				nxtS[i << 8 | j << 4 | in] = (UInt8)(j * 16 + in);
+				nxtS[i << 8 | j << 4 | in] = (uint8_t)(j * 16 + in);
 			}
 		}
 	}
@@ -449,16 +433,16 @@ UInt8* viterbi(int samplesPerTriplet, double amplitude, const double* samples, i
 		}
 	}
 
-    UInt8* Stt[256];
-    UInt8* Itt[256];
+    uint8_t* Stt[256];
+    uint8_t* Itt[256];
     double L[256];
-    UInt8  St[256];
-    UInt8  It[256];
+    uint8_t  St[256];
+    uint8_t  It[256];
 
     for (int i = 0; i < 256; i++)
 	{
-        Stt[i] = (UInt8*)calloc(sizeof(UInt8), N);
-        Itt[i] = (UInt8*)calloc(sizeof(UInt8), N);
+        Stt[i] = (uint8_t*)calloc(sizeof(uint8_t), N);
+        Itt[i] = (uint8_t*)calloc(sizeof(uint8_t), N);
         L[i] = 0;
         St[i] = 1;
         It[i] = 1;
@@ -537,8 +521,8 @@ UInt8* viterbi(int samplesPerTriplet, double amplitude, const double* samples, i
 
     printf("\nThe cost metric in Viterbi is about %3.3f\n\n", L[minIndex]);
 
-    UInt8* P = (UInt8*)calloc(sizeof(UInt8), N);
-    UInt8* I = (UInt8*)calloc(sizeof(UInt8), N);
+    uint8_t* P = (uint8_t*)calloc(sizeof(uint8_t), N);
+    uint8_t* I = (uint8_t*)calloc(sizeof(uint8_t), N);
 
     P[N - 1] = Stt[minIndex][N - 1];
     I[N - 1] = Itt[minIndex][N - 1];
@@ -603,15 +587,15 @@ UInt8* viterbi(int samplesPerTriplet, double amplitude, const double* samples, i
 // RLE encodes a PSG sample buffer. The encoded buffer is created and returned
 // by the function.
 //
-UInt8* rleEncode(const UInt8* buffer, int length, int incr, UInt32* encLenth)
+uint8_t* rleEncode(const uint8_t* buffer, int length, int incr, uint32_t* encLenth)
 {
-    const UInt8* I = buffer;
+    const uint8_t* I = buffer;
 
-    UInt8* sRet = (UInt8*)calloc(sizeof(UInt8), 2 * length);
+    uint8_t* sRet = (uint8_t*)calloc(sizeof(uint8_t), 2 * length);
     sRet[0] = ((length / 3) >> 0) & 0xff;
     sRet[1] = ((length / 3) >> 8) & 0xff;
 
-    UInt8* s = sRet + 2;
+    uint8_t* s = sRet + 2;
 
     int j = 3;
     int A[3] = {I[0], I[1], I[2]};
@@ -643,46 +627,38 @@ UInt8* rleEncode(const UInt8* buffer, int length, int incr, UInt32* encLenth)
 //////////////////////////////////////////////////////////////////////////////
 // Saves an encoded buffer, the file extension is replaced with .bin.
 //
-void saveEncodedBuffer(const char* filename, const UInt8* buffer, int length)
+void saveEncodedBuffer(const std::string& filename, const uint8_t* buffer, int length)
 {
-    char fname[512];
-    strcpy(fname, filename);
-    strcpy(fname + strlen(fname) - 4, ".bin");
-
-    FILE* f = fopen(fname, "wb");
-    if (f == NULL) {
-        printf("Failed opening %s for writing\n", fname);
-        return;
-    }
-
-    fwrite(buffer, 1, length, f);
-
-    fclose(f);
+	std::ofstream f;
+	f.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
+	f.open(filename, std::fstream::binary);
+	std::copy(buffer, buffer + length, std::ostream_iterator<uint8_t>(f));
+	f.close();
 }
 
-UInt8* chVolPack(int type, UInt8* binBuffer, UInt32 length, int romSplit, UInt32* destLength)
+uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, int romSplit, uint32_t* destLength)
 {
-    UInt8* destBuffer = (UInt8*)calloc(sizeof(UInt8), 2 * length + 500);
-    UInt8* destP = destBuffer;
+    uint8_t* destBuffer = (uint8_t*)calloc(sizeof(uint8_t), 2 * length + 500);
+    uint8_t* destP = destBuffer;
     if (!romSplit) {
-        *destP++ = (UInt8)((length >> 0) & 0xff);
-        *destP++ = (UInt8)((length >> 8) & 0xff);
-        for (UInt32 i = 0; i < length; i++) {
+        *destP++ = (uint8_t)((length >> 0) & 0xff);
+        *destP++ = (uint8_t)((length >> 8) & 0xff);
+        for (uint32_t i = 0; i < length; i++) {
             if (type == 0) {
                 *destP++ = binBuffer[i];
             }
             else {
-                *destP++ = (UInt8)((i % 3) << 6) | binBuffer[i];
+                *destP++ = (uint8_t)((i % 3) << 6) | binBuffer[i];
             }
         }
     }
     else {
         int channel = 0;
         do {
-            UInt32 subLength = MIN(length, 0x2000 * 2 - 2);
-            *destP++ = (UInt8)((subLength >> 0) & 0xff);
-            *destP++ = (UInt8)((subLength >> 8) & 0xff);
-            for (UInt32 i = 0; i < subLength; i++) {
+            uint32_t subLength = MIN(length, 0x2000 * 2 - 2);
+            *destP++ = (uint8_t)((subLength >> 0) & 0xff);
+            *destP++ = (uint8_t)((subLength >> 8) & 0xff);
+            for (uint32_t i = 0; i < subLength; i++) {
                 if (type == 0) {
                     *destP++ = (channel << 6) | *binBuffer++;
                     channel = (channel + 1) % 3;
@@ -698,7 +674,7 @@ UInt8* chVolPack(int type, UInt8* binBuffer, UInt32 length, int romSplit, UInt32
             *destP++ = 0;
         }
     }
-    *destLength = (UInt32)(destP - destBuffer);
+    *destLength = (uint32_t)(destP - destBuffer);
     return destBuffer;
 }
 
@@ -706,7 +682,7 @@ UInt8* chVolPack(int type, UInt8* binBuffer, UInt32 length, int romSplit, UInt32
 // RLE encodes a buffer. The method can do both a
 // consecutive buffer or a buffer split in multiple 8kB buffers
 //
-UInt8* rlePack(UInt8* binBuffer, UInt32 length, int romSplit, int incr, UInt32* destLength)
+uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int incr, uint32_t* destLength)
 {
     if (!romSplit) {
         printf("Encoding samples for original player\n");
@@ -715,18 +691,18 @@ UInt8* rlePack(UInt8* binBuffer, UInt32 length, int romSplit, int incr, UInt32* 
 
     printf("Encoding samples for rom player\n");
     
-    UInt8* destBuffer = (UInt8*)calloc(sizeof(UInt8), 2 * length);
+    uint8_t* destBuffer = (uint8_t*)calloc(sizeof(uint8_t), 2 * length);
     int srcOffset = 0;
-    const UInt32 SUB_SAMPLE_LEN = 10000 * 2;
+    const uint32_t SUB_SAMPLE_LEN = 10000 * 2;
     *destLength = 0;
 
     // For rom version of replayer
-    UInt32 count = length / 3;
+    uint32_t count = length / 3;
     while (count > 0) {
         int curCount = MIN(count, SUB_SAMPLE_LEN);
 
-        UInt8* encBuffer;
-        UInt32 encLen = 0;
+        uint8_t* encBuffer;
+        uint32_t encLen = 0;
 
         for (;;) {
             encBuffer = rleEncode(binBuffer + 3 * srcOffset, curCount * 3, incr, &encLen);       
@@ -754,8 +730,8 @@ UInt8* rlePack(UInt8* binBuffer, UInt32 length, int romSplit, int incr, UInt32* 
 // Converts a wav file to PSG binary format. The method can do both a
 // consecutive buffer or a buffer split in multiple 8kB buffers
 //
-int convertWav(const char* filename, int saveInternal, int costFunction, int interpolation,
-               UInt32 cpuFrequency, UInt32 dt1, UInt32 dt2, UInt32 dt3, 
+int convertWav(const std::string& filename, int saveInternal, int costFunction, int interpolation,
+               uint32_t cpuFrequency, uint32_t dt1, uint32_t dt2, uint32_t dt3, 
                int encodingType, int ratio, double amplitude, int romSplit, int packingType)
 {
     if (encodingType != 0) {
@@ -766,8 +742,8 @@ int convertWav(const char* filename, int saveInternal, int costFunction, int int
         printf("Invalid number of inputs per output\n");
         return 0;
     }
-    UInt32 count;
-    UInt32 frequency = cpuFrequency * ratio / (dt1 + dt2 + dt3);
+    uint32_t count;
+    uint32_t frequency = cpuFrequency * ratio / (dt1 + dt2 + dt3);
     if (frequency == 0) {
         printf("Invalid frequency\n");
         return 0;
@@ -777,19 +753,19 @@ int convertWav(const char* filename, int saveInternal, int costFunction, int int
 
     double* samples = loadSamples(filename, frequency, &count);
     if (samples == NULL) {
-        printf("Failed to load wav file: %s\n", filename);
+        printf("Failed to load wav file: %s\n", filename.c_str());
         return 0;
     }
     
     // Do viterbi encoding
-    UInt32 binSize = 0;
-    UInt8* binBuffer = viterbi(ratio, amplitude, samples, count, dt1, dt2, dt3, 
+    uint32_t binSize = 0;
+    uint8_t* binBuffer = viterbi(ratio, amplitude, samples, count, dt1, dt2, dt3, 
                                interpolation, costFunction, saveInternal, &binSize);
 
     // RLE encode the buffer. Either as one consecutive RLE encoded
     // buffer, or as 8kB small buffers, each RLE encoded with header.
-    UInt8* destBuffer = 0;
-    UInt32 destLength = 0;
+    uint8_t* destBuffer = 0;
+    uint32_t destLength = 0;
 
     switch (packingType) {
     case 0: //4 bit RLE
@@ -807,7 +783,7 @@ int convertWav(const char* filename, int saveInternal, int costFunction, int int
     }
 
     // Save the encoded buffer
-    saveEncodedBuffer(filename, destBuffer, destLength);
+    saveEncodedBuffer(filename + ".pcmenc", destBuffer, destLength);
     free(destBuffer);
     free(binBuffer);
 
@@ -828,11 +804,11 @@ int main(int argc, char** argv)
     int ratio = 1;
     int interpolation = 2;
     int costFunction = 2;
-    UInt32 cpuFrequency = 3579545;
-    UInt32 amplitude = 115;
-    UInt32 dt1 = (UInt32)-1;
-    UInt32 dt2 = (UInt32)-1;
-    UInt32 dt3 = (UInt32)-1;
+    uint32_t cpuFrequency = 3579545;
+    uint32_t amplitude = 115;
+    uint32_t dt1 = (uint32_t)-1;
+    uint32_t dt2 = (uint32_t)-1;
+    uint32_t dt3 = (uint32_t)-1;
 
     // Parse command line options
     for (int i = 1; i < argc; i++) {
@@ -925,19 +901,19 @@ int main(int argc, char** argv)
     switch (ratio) {
     default:
     case 0:
-        dt1 = dt1 != (UInt32)-1 ? dt1 : 32;
-        dt2 = dt2 != (UInt32)-1 ? dt2 : 27;
-        dt3 = dt3 != (UInt32)-1 ? dt3 : 266;
+        dt1 = dt1 != (uint32_t)-1 ? dt1 : 32;
+        dt2 = dt2 != (uint32_t)-1 ? dt2 : 27;
+        dt3 = dt3 != (uint32_t)-1 ? dt3 : 266;
         break;
     case 1:
-        dt1 = dt1 != (UInt32)-1 ? dt1 : 156;
-        dt2 = dt2 != (UInt32)-1 ? dt2 : 27;
-        dt3 = dt3 != (UInt32)-1 ? dt3 : 141;
+        dt1 = dt1 != (uint32_t)-1 ? dt1 : 156;
+        dt2 = dt2 != (uint32_t)-1 ? dt2 : 27;
+        dt3 = dt3 != (uint32_t)-1 ? dt3 : 141;
         break;
     case 2:
-        dt1 = dt1 != (UInt32)-1 ? dt1 : 73;
-        dt2 = dt2 != (UInt32)-1 ? dt2 : 84;
-        dt3 = dt3 != (UInt32)-1 ? dt3 : 87;
+        dt1 = dt1 != (uint32_t)-1 ? dt1 : 73;
+        dt2 = dt2 != (uint32_t)-1 ? dt2 : 84;
+        dt3 = dt3 != (uint32_t)-1 ? dt3 : 87;
         break;
     }
 
