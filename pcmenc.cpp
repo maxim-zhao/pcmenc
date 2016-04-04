@@ -495,8 +495,8 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
             if (Ln[ns] >= Ltst)
 			{
                 Ln[ns] = Ltst;
-                St[ns] = cs;
-                It[ns] = in;
+                St[ns] = (uint8_t)cs;
+                It[ns] = (uint8_t)in;
             }
         }
 
@@ -609,12 +609,13 @@ uint8_t* rleEncode(const uint8_t* buffer, int length, int incr, uint32_t* encLen
             la[x] += incr;
         }
         else {
-            s[ja[x]] = 16 * la[x] + A[x];
+            s[ja[x]] = (uint8_t)(la[x] << 4 | A[x]);
             la[x] = 0;
             ja[x] = j++;
             A[x] = I[i];
-            if (i >= length - 3) {
-                s[ja[x]] = 16 * la[x] + A[x];
+            if (i >= length - 3) 
+			{
+                s[ja[x]] = (uint8_t)(la[x] << 4 | A[x]);
             }
         }
     }
@@ -654,13 +655,16 @@ uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, int romSplit, 
     }
     else {
         int channel = 0;
-        do {
-            uint32_t subLength = MIN(length, 0x2000 * 2 - 2);
+        do 
+		{
+            uint32_t subLength = std::min(length, (uint32_t)0x2000 * 2 - 2);
             *destP++ = (uint8_t)((subLength >> 0) & 0xff);
             *destP++ = (uint8_t)((subLength >> 8) & 0xff);
-            for (uint32_t i = 0; i < subLength; i++) {
-                if (type == 0) {
-                    *destP++ = (channel << 6) | *binBuffer++;
+            for (uint32_t i = 0; i < subLength; i++) 
+			{
+                if (type == 0) 
+				{
+                    *destP++ = (uint8_t)(channel << 6) | *binBuffer++;
                     channel = (channel + 1) % 3;
                 }
                 else {
@@ -699,7 +703,7 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int incr, ui
     // For rom version of replayer
     uint32_t count = length / 3;
     while (count > 0) {
-        int curCount = MIN(count, SUB_SAMPLE_LEN);
+        int curCount = std::min(count, SUB_SAMPLE_LEN);
 
         uint8_t* encBuffer;
         uint32_t encLen = 0;
