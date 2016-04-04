@@ -911,66 +911,55 @@ int main(int argc, char** argv)
 
 		if (filename.empty())
 		{
-			printf("Usage:\n");
-			printf("pcmenc.exe [-r] [-e <encoding>] [-cpuf <freq>] [-p <packing>]\n");
-			printf("           [-dt1 <tstates>] [-dt2 <tstates>] [-dt3 <tstates>]\n");
-			printf("           [-a <amplitude>] [-rto <ratio>] <wavfile>\n");
-			printf("\n");
-			printf("    -r <n>          Pack encoded wave into <n>KB blocks for rom replayers\n");
-			printf("\n");
-			printf("    -p <packing>    Packing type:                b7...b5|b4...b0\n");
-			printf("                        0 = 4bit RLE (default)   run len|PSG vol\n");
-			printf("                        1 = 3 bit RLE; as before but b5 =0\n");
-			printf("                        2 = 1 byte vol\n");
-			printf("                        3 = 1 byte {ch, vol} pairs\n");
-			printf("\n");
-			printf("    -cpuf <freq>    CPU frequency of the CPU (Hz)\n");
-			printf("                        Default: 3579545\n");
-			printf("\n");
-			printf("    -dt1 <tstates>  CPU Cycles between update of channel A and B\n");
-			printf("    -dt2 <tstates>  CPU Cycles between update of channel B and C\n");
-			printf("    -dt3 <tstates>  CPU Cycles between update of channel C and A\n");
-			printf("                    The replayer sampling base period is \n");
-			printf("                          T = dt1+dt2+dt3\n");
-			printf("                    Defaults (depends on rto):\n");
-			printf("                        ratio = 1 : dt1=32, dt2=27,  dt3=266 => 11014Hz\n");
-			printf("                        ratio = 2 : dt1=156,dt2=27,  dt3=141 => 22096Hz \n");
-			printf("                        ratio = 3 : dt1=73, dt2=84,  dt3=87  => 44011Hz\n");
-			printf("\n");
-			printf("                    Note that the replayed sampling base period depends\n");
-			printf("                    on the replayer and how many samples it will play\n");
-			printf("                    in each PSG tripplet update. The default settings\n");
-			printf("                    are based on:\n");
-			printf("                        1 : replayer_core11025 which plays one sample per\n");
-			printf("                            psg tripplet update\n");
-			printf("                        2 : replayer_core22050 which plays two sample per\n");
-			printf("                            psg tripplet update\n");
-			printf("                        3 : replayer_core44100 which plays three sample\n");
-			printf("                            per psg tripplet update \n");
-			printf("\n");
-			printf("    -a <amplitude>  Input amplitude before encoding.\n");
-			printf("                        Default 115\n");
-			printf("\n");
-			printf("    -rto <ratio>   Number of input samples per PSG triplet\n");
-			printf("                        Default: 1\n");
-			printf("\n");
-			printf("                   This parameter can be used to oversample the input\n");
-			printf("                   wave. Note that this parameter also will affect the\n");
-			printf("                   replay rate based on how many samples per PSG tripplet\n");
-			printf("                   update the replayer uses.\n");
-			printf("\n");
-			printf("    -c <costfun>    Viterbi cost function:\n");
-			printf("                        1   : ABS measure\n");
-			printf("                        2   : Standard MSE (default)\n");
-			printf("                        > 2 : Lagrange interpolation of order 'c'\n");
-			printf("\n");
-			printf("    -i <interpol>   Resampling interpolation mode:\n");
-			printf("                        0 = Linear interpolation\n");
-			printf("                        1 = Quadratic interpolation\n");
-			printf("                        2 = Lagrange interpolation (default)\n");
-			printf("\n");
-			printf("    <wavfile>       Filename of .wav file to encode\n");
-			printf("\n");
+			printf(
+				"Usage:\n"
+				"pcmenc.exe [-r] [-e <encoding>] [-cpuf <freq>] [-p <packing>]\n"
+				"           [-dt1 <tstates>] [-dt2 <tstates>] [-dt3 <tstates>]\n"
+				"           [-a <amplitude>] [-rto <ratio>] <wavfile>\n"
+				"\n"
+				"    -r <n>          Pack encoded wave into <n>KB blocks for rom replayers\n"
+				"\n"
+				"    -p <packing>    Packing type:                b7...b5|b4...b0\n"
+				"                        0 = 4bit RLE (default)   run len|PSG vol\n"
+				"                        1 = 3 bit RLE; as before but b5 =0\n"
+				"                        2 = 1 byte vol\n"
+				"                        3 = 1 byte {ch, vol} pairs\n"
+				"\n"
+				"    -cpuf <freq>    CPU frequency of the CPU (Hz)\n"
+				"                        Default: 3579545\n"
+				"\n"
+				"    -dt1 <tstates>  CPU Cycles between update of channel A and B\n"
+				"    -dt2 <tstates>  CPU Cycles between update of channel B and C\n"
+				"    -dt3 <tstates>  CPU Cycles between update of channel C and A\n"
+				"                    The replayer sampling base period is \n"
+				"                          T = dt1+dt2+dt3\n"
+				"                    Note that the replayed sampling base period depends\n"
+				"                    on the replayer and how many samples it will play\n"
+				"                    in each PSG triplet update.\n"
+				"\n"
+				"    -a <amplitude>  Input amplitude before encoding.\n"
+				"                        Default 115\n"
+				"\n"
+				"    -rto <ratio>   Number of input samples per PSG triplet\n"
+				"                        Default: 1\n"
+				"\n"
+				"                   This parameter can be used to oversample the input\n"
+				"                   wave. Note that this parameter also will affect the\n"
+				"                   replay rate based on how many samples per PSG triplet\n"
+				"                   update the replayer uses.\n"
+				"\n"
+				"    -c <costfun>    Viterbi cost function:\n"
+				"                        1  : ABS measure\n"
+				"                        2  : Standard MSE (default)\n"
+				"                        >2 : Lagrange interpolation of order 'c'\n"
+				"\n"
+				"    -i <interpol>   Resampling interpolation mode:\n"
+				"                        0 = Linear interpolation\n"
+				"                        1 = Quadratic interpolation\n"
+				"                        2 = Lagrange interpolation (default)\n"
+				"\n"
+				"    <wavfile>       Filename of .wav file to encode\n"
+				"\n");
 
 			return 0;
 		}
