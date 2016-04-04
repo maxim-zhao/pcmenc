@@ -622,45 +622,44 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 // RLE encodes a PSG sample buffer. The encoded buffer is created and returned
 // by the function.
 //
-uint8_t* rleEncode(const uint8_t* buffer, int length, int incr, uint32_t* encLenth)
+uint8_t* rleEncode(const uint8_t* pData, int dataLen, int rleIncrement, uint32_t& resultLen)
 {
-    const uint8_t* I = buffer;
+    uint8_t* result = new uint8_t[2 * dataLen + 2];
+	// Start with the triplet count
+	size_t tripletCount = dataLen / 3;
+	result[0] = (tripletCount >> 0) & 0xff;
+    result[1] = (tripletCount >> 8) & 0xff;
 
-    uint8_t* sRet = new uint8_t[2 * length];
-    sRet[0] = ((length / 3) >> 0) & 0xff;
-    sRet[1] = ((length / 3) >> 8) & 0xff;
+    int currentState[3] = { pData[0], pData[1], pData[2] };
+    int rleCounts[3] = {0, 0, 0};
+    int offsets[3] = {2, 3, 4};
+	int nextUnusedOffset = 5;
 
-    uint8_t* s = sRet + 2;
-
-    int j = 3;
-    int A[3] = {I[0], I[1], I[2]};
-    int la[3] = {0, 0, 0};
-    int ja[3] = {0, 1, 2};
-
-    for (int i = 3; i < length; i++) 
+    for (int i = 3; i < dataLen; i++) 
 	{
-        int x = i % 3;
+        int channel = i % 3;
+		bool isLastTriplet = i >= dataLen - 3;
 
-        if (A[x] == I[i] && la[x] < 15 - (incr - 1) && i < length - 3) 
+        if (currentState[channel] == pData[i] && rleCounts[channel] < 15 - (rleIncrement - 1) && !isLastTriplet)
 		{
-            la[x] += incr;
+            rleCounts[channel] += rleIncrement;
         }
         else 
 		{
-            s[ja[x]] = (uint8_t)(la[x] << 4 | A[x]);
-            la[x] = 0;
-            ja[x] = j++;
-            A[x] = I[i];
-            if (i >= length - 3) 
+            result[offsets[channel]] = (uint8_t)(rleCounts[channel] << 4 | currentState[channel]);
+            rleCounts[channel] = 0;
+            offsets[channel] = nextUnusedOffset++;
+            currentState[channel] = pData[i];
+            if (isLastTriplet) 
 			{
-                s[ja[x]] = (uint8_t)(la[x] << 4 | A[x]);
+                result[offsets[channel]] = (uint8_t)(rleCounts[channel] << 4 | currentState[channel]);
             }
         }
     }
 
-    *encLenth = j + 2;
+    resultLen = nextUnusedOffset;
 
-    return sRet;
+    return result;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -726,12 +725,12 @@ uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, uint32_t romSp
 // RLE encodes a buffer. The method can do both a
 // consecutive buffer or a buffer split in multiple 8kB buffers
 //
-uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int incr, uint32_t* destLength)
+uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int incr, uint32_t& resultLen)
 {
     if (romSplit == 0)
 	{
         printf("Encoding samples for original player\n");
-        return rleEncode(binBuffer, length, incr, destLength);
+        return rleEncode(binBuffer, length, incr, resultLen);
     }
 
     printf("Encoding samples for rom player\n");
@@ -739,7 +738,7 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int inc
     uint8_t* destBuffer = new uint8_t[2 * length];
     int srcOffset = 0;
     const uint32_t SUB_SAMPLE_LEN = 10000 * romSplit / 0x2000; // TODO
-    *destLength = 0;
+    resultLen = 0;
 
     // For rom version of replayer
     uint32_t count = length / 3;
@@ -751,7 +750,7 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int inc
         uint32_t encLen = 0;
 
         for (;;) {
-            encBuffer = rleEncode(binBuffer + 3 * srcOffset, curCount * 3, incr, &encLen);       
+            encBuffer = rleEncode(binBuffer + 3 * srcOffset, curCount * 3, incr, encLen);       
             if (encLen <= romSplit)
 			{
                 break;
@@ -759,13 +758,13 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int inc
             delete [] encBuffer;
             curCount = 995 * curCount / 1000;
         }
-        memcpy(destBuffer + *destLength, encBuffer, encLen);
-        memset(destBuffer + *destLength + encLen, 0, romSplit - encLen);
+        memcpy(destBuffer + resultLen, encBuffer, encLen);
+        memset(destBuffer + resultLen + encLen, 0, romSplit - encLen);
 
         delete [] encBuffer;
 
         count -= curCount;
-        *destLength += romSplit;
+        resultLen += romSplit;
         srcOffset += curCount;
     }
 
@@ -786,7 +785,6 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
 	{
 		throw std::invalid_argument("Invalid number of inputs per output");
     }
-    uint32_t count;
     uint32_t frequency = cpuFrequency * ratio / (dt1 + dt2 + dt3);
     if (frequency == 0) 
 	{
@@ -796,7 +794,8 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
     printf("Encoding PSG samples at %dHz\n", (int)frequency);
 
 	printf("Loading %s...", filename.c_str());
-    double* samples = loadSamples(filename, frequency, count);
+	uint32_t samplesLen;
+	double* samples = loadSamples(filename, frequency, samplesLen);
     if (samples == NULL)
 	{
 		throw std::runtime_error("Failed to load wav file");
@@ -805,21 +804,20 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
     
     // Do viterbi encoding
     uint32_t binSize;
-    uint8_t* binBuffer = viterbi(ratio, amplitude, samples, count, dt1, dt2, dt3, 
-                               interpolation, costFunction, saveInternal, binSize);
+    uint8_t* binBuffer = viterbi(ratio, amplitude, samples, samplesLen, dt1, dt2, dt3, interpolation, costFunction, saveInternal, binSize);
 
     // RLE encode the buffer. Either as one consecutive RLE encoded
     // buffer, or as 8kB small buffers, each RLE encoded with header.
     uint8_t* destBuffer;
-    uint32_t destLength = 0;
+    uint32_t destLength;
 
     switch (packingType) 
 	{
 	case PackingType_RLE:
-        destBuffer = rlePack(binBuffer, binSize, romSplit, 1, &destLength);
+        destBuffer = rlePack(binBuffer, binSize, romSplit, 1, destLength);
         break;
 	case PackingType_RLE3:
-        destBuffer = rlePack(binBuffer, binSize, romSplit, 2, &destLength);
+        destBuffer = rlePack(binBuffer, binSize, romSplit, 2, destLength);
         break;
 	case PackingType_VolByte:
         destBuffer = chVolPack(0, binBuffer, binSize, romSplit, &destLength);
@@ -829,13 +827,13 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
         break;
 	case PackingType_PackedVol:
 	default:
-		throw new std::invalid_argument("Invalid packing type");
+		throw std::invalid_argument("Invalid packing type");
     }
+	delete[] binBuffer;
 
     // Save the encoded buffer
     saveEncodedBuffer(filename + ".pcmenc", destBuffer, destLength);
     delete [] destBuffer;
-    delete [] binBuffer;
 }
 
 class Args
