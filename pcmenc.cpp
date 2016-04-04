@@ -30,6 +30,7 @@
 #include <iterator>
 #include <cstdint>
 #include <sstream>
+#include <map>
 
 #include "st.h"
 
@@ -750,12 +751,8 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int incr, ui
 //
 void convertWav(const std::string& filename, int saveInternal, int costFunction, int interpolation,
                uint32_t cpuFrequency, uint32_t dt1, uint32_t dt2, uint32_t dt3, 
-               int encodingType, int ratio, double amplitude, int romSplit, int packingType)
+               int ratio, double amplitude, int romSplit, int packingType)
 {
-    if (encodingType != 0)
-	{
-		throw std::invalid_argument("Encoding type not supported");
-    }
     // Load samples from wav file
     if (ratio < 1) 
 	{
@@ -810,136 +807,95 @@ void convertWav(const std::string& filename, int saveInternal, int costFunction,
     delete [] binBuffer;
 }
 
+class Args
+{
+	std::map<std::string, std::string> _args;
+
+public:
+	Args(int argc, char** argv)
+	{
+		bool haveLastKey = false;
+		std::map<std::string, std::string>::iterator lastKey;
+		for (int i = 1; i < argc; ++i)
+		{
+			switch (argv[i][0])
+			{
+			case '/':
+			case '-':
+				// Store as a valueless key
+				lastKey = _args.insert(make_pair(std::string(argv[i] + 1), "")).first;
+				haveLastKey = true;
+				// Remember it
+				break;
+			case '\0':
+				break;
+			default:
+				// Must be a value for the last key, or a filename
+				if (haveLastKey)
+				{
+					lastKey->second = argv[i];
+				}
+				else
+				{
+					_args.insert(std::make_pair("filename", argv[i]));
+				}
+				// Clear it so we don't put the filename in the wrong place
+				haveLastKey = false;
+				break;
+			}
+		}
+	}
+
+	std::string getString(const std::string& name, const std::string& defaultValue)
+	{
+		std::map<std::string, std::string>::const_iterator it = _args.find(name);
+		if (it == _args.end())
+		{
+			return defaultValue;
+		}
+		return it->second;
+	}
+
+	uint32_t getInt(const std::string& name, uint32_t defaultValue)
+	{
+		std::map<std::string, std::string>::const_iterator it = _args.find(name);
+		if (it == _args.end())
+		{
+			return defaultValue;
+		}
+		return atoi(it->second.c_str());
+	}
+
+	bool exists(const std::string& name) const
+	{
+		return _args.find(name) != _args.end();
+	}
+};
+
 
 //////////////////////////////////////////////////////////////////////////////
 // Program main.
 //
 int main(int argc, char** argv)
 {
-	std::string filename;
-	int romSplit = 0;
-	int saveInternal = 0;
-	int packingType = 0;  // 0=RLE, 1=TEST
-	int encodingType = 0;
-	int ratio = 1;
-	int interpolation = 2;
-	int costFunction = 2;
-	uint32_t cpuFrequency = 3579545;
-	uint32_t amplitude = 115;
-	uint32_t dt1 = (uint32_t)-1;
-	uint32_t dt2 = (uint32_t)-1;
-	uint32_t dt3 = (uint32_t)-1;
+	Args args(argc, argv);
 
-	// Parse command line options
-	for (int i = 1; i < argc; i++) {
-		if (0 == strcmp(argv[i], "-cpuf") || 0 == strcmp(argv[i], "/cpuf")) {
-			if (++i >= argc) {
-				filename.clear();
-				break;
-			}
-			cpuFrequency = atoi(argv[i]);
-		}
-		else if (0 == strcmp(argv[i], "-a") || 0 == strcmp(argv[i], "/a")) {
-			if (++i >= argc) {
-				filename.clear();
-				break;
-			}
-			amplitude = atoi(argv[i]);
-		}
-		else if (0 == strcmp(argv[i], "-dt1") || 0 == strcmp(argv[i], "/dt1")) {
-			if (++i >= argc) {
-				filename.clear();
-				break;
-			}
-			dt1 = atoi(argv[i]);
-		}
-		else if (0 == strcmp(argv[i], "-dt2") || 0 == strcmp(argv[i], "/dt2")) {
-			if (++i >= argc) {
-				filename.clear();
-				break;
-			}
-			dt2 = atoi(argv[i]);
-		}
-		else if (0 == strcmp(argv[i], "-dt3") || 0 == strcmp(argv[i], "/dt3")) {
-			if (++i >= argc) {
-				filename.clear();
-				break;
-			}
-			dt3 = atoi(argv[i]);
-		}
-		else if (0 == strcmp(argv[i], "-e") || 0 == strcmp(argv[i], "/e")) {
-			if (++i >= argc) {
-				filename.clear();
-				break;
-			}
-			encodingType = atoi(argv[i]);
-		}
-		else if (0 == strcmp(argv[i], "-rto") || 0 == strcmp(argv[i], "/rto")) {
-			if (++i >= argc) {
-				filename.clear();
-				break;
-			}
-			ratio = atoi(argv[i]);
-		}
-		else if (0 == strcmp(argv[i], "-r") || 0 == strcmp(argv[i], "/r")) {
-			romSplit = 1;
-		}
-		else if (0 == strcmp(argv[i], "-si") || 0 == strcmp(argv[i], "/si")) {
-			saveInternal = 1;
-		}
-		else if (0 == strcmp(argv[i], "-p") || 0 == strcmp(argv[i], "/p")) {
-			if (++i >= argc) {
-				filename.clear();
-				break;
-			}
-			packingType = atoi(argv[i]);
-		}
-		else if (0 == strcmp(argv[i], "-c") || 0 == strcmp(argv[i], "/c")) {
-			if (++i >= argc) {
-				filename.clear();
-				break;
-			}
-			costFunction = atoi(argv[i]);
-		}
-		else if (0 == strcmp(argv[i], "-i") || 0 == strcmp(argv[i], "/i")) {
-			if (++i >= argc) {
-				filename.clear();
-				break;
-			}
-			interpolation = atoi(argv[i]);
-		}
-		else if (filename.empty() && argv[i][0] != '-') {
-			filename = argv[i];
-		}
-		else {
-			filename.clear();
-			break;
-		}
-	}
+	std::string filename = args.getString("filename", "");
+	int romSplit = args.getInt("r", 0) * 1024;
+	bool saveInternal = args.exists("si");
+	int packingType = args.getInt("p", 0);
+	int ratio = args.getInt("rto", 1);
+	int interpolation = args.getInt("i", 2);
+	int costFunction = args.getInt("c", 2);
+	uint32_t cpuFrequency = args.getInt("cpuf", 3579545);
+	uint32_t amplitude = args.getInt("a", 115);
+	uint32_t dt1 = args.getInt("dt1", 0);
+	uint32_t dt2 = args.getInt("dt2", 0);
+	uint32_t dt3 = args.getInt("dt3", 0);
 
-	// Set defaults for dt depending on encoding type
-	switch (ratio) {
-	default:
-	case 0:
-		dt1 = dt1 != (uint32_t)-1 ? dt1 : 32;
-		dt2 = dt2 != (uint32_t)-1 ? dt2 : 27;
-		dt3 = dt3 != (uint32_t)-1 ? dt3 : 266;
-		break;
-	case 1:
-		dt1 = dt1 != (uint32_t)-1 ? dt1 : 156;
-		dt2 = dt2 != (uint32_t)-1 ? dt2 : 27;
-		dt3 = dt3 != (uint32_t)-1 ? dt3 : 141;
-		break;
-	case 2:
-		dt1 = dt1 != (uint32_t)-1 ? dt1 : 73;
-		dt2 = dt2 != (uint32_t)-1 ? dt2 : 84;
-		dt3 = dt3 != (uint32_t)-1 ? dt3 : 87;
-		break;
-	}
-
-	if (dt1 + dt2 + dt3 == 0 || cpuFrequency == 0)
+	if (dt1 == 0 || dt2 == 0 || dt3 == 0)
 	{
-		filename.clear();
+		throw new std::invalid_argument("Invalid timings");
 	}
 
 	if (filename.empty())
@@ -1010,7 +966,7 @@ int main(int argc, char** argv)
 
 	try
 	{
-		convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, encodingType, ratio, (double)amplitude / 100, romSplit, packingType);
+		convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, ratio, (double)amplitude / 100, romSplit, packingType);
 		return 1;
 	}
 	catch (std::exception& e)
@@ -1019,6 +975,3 @@ int main(int argc, char** argv)
 		return 0;
 	}
 }
-
-
-// */
