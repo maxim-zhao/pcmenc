@@ -45,22 +45,24 @@
 #define needSwap() (*(uint32_t*)"A   " == 0x41202020)
 
 /* Lagrange's classical polynomial interpolation */
-static double S(const double y[], int i, double dt,int L,int R)
+static double interpolate(const double data[], int index, double dt, int numLeft, int numRight)
 {
-    double  yd = 0;
-    double  t = (double) i + dt;    
-    
-    for (int j=i+L; j<=i+R; j++)
-    {
-            double p = y[(j<0) ? 0 : j];
-            for (int k=i+L; k<=i+R; k++)
-            {
-                if  (k!=j)
-                    p*=(t-k)/(j-k);
-            }
-            yd+=p;
-    }    
-  return yd;
+    double result = 0.0;
+    double t = (double) index + dt;
+
+	for (int j = index - numLeft; j <= index + numRight; ++j)
+	{
+		double p = data[(j < 0) ? 0 : j];
+		for (int k = index - numLeft; k <= index + numRight; ++k)
+		{
+			if (k != j)
+			{
+				p *= (t - k) / (j - k);
+			}
+		}
+		result += p;
+	}    
+	return result;
 }
 
 // Helper class for file IO
@@ -403,7 +405,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
         break;
     case 2:
         printf("   Resampling using Lagrange interpolation on 11 points\n");
-        numLeft=-5;
+        numLeft=5;
         numRight=5;
         break;
 	default:
@@ -417,8 +419,8 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
         double  dt2 = t2-(int)t2;
 
         x[3*i+0] =  y[t0];
-        x[3*i+1] =  S(y,(int)t1,dt1,numLeft,numRight);
-        x[3*i+2] =  S(y,(int)t2,dt2,numLeft,numRight);
+        x[3*i+1] =  interpolate(y,(int)t1,dt1,numLeft,numRight);
+        x[3*i+2] =  interpolate(y,(int)t2,dt2,numLeft,numRight);
     }
 
     if (saveInternal) 
