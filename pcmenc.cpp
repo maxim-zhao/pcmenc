@@ -652,27 +652,32 @@ void saveEncodedBuffer(const std::string& filename, const uint8_t* buffer, int l
 	dump(filename, buffer, length);
 }
 
-uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, int romSplit, uint32_t* destLength)
+uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, uint32_t romSplit, uint32_t* destLength)
 {
     uint8_t* destBuffer = new uint8_t[2 * length + 500];
     uint8_t* destP = destBuffer;
-    if (!romSplit) {
+    if (romSplit == 0)
+	{
         *destP++ = (uint8_t)((length >> 0) & 0xff);
         *destP++ = (uint8_t)((length >> 8) & 0xff);
-        for (uint32_t i = 0; i < length; i++) {
-            if (type == 0) {
+        for (uint32_t i = 0; i < length; i++) 
+		{
+            if (type == 0) 
+			{
                 *destP++ = binBuffer[i];
             }
-            else {
+            else 
+			{
                 *destP++ = (uint8_t)((i % 3) << 6) | binBuffer[i];
             }
         }
     }
-    else {
+    else 
+	{
         int channel = 0;
         do 
 		{
-            uint32_t subLength = std::min(length, (uint32_t)0x2000 * 2 - 2);
+            uint32_t subLength = std::min(length, romSplit - 2);
             *destP++ = (uint8_t)((subLength >> 0) & 0xff);
             *destP++ = (uint8_t)((subLength >> 8) & 0xff);
             for (uint32_t i = 0; i < subLength; i++) 
@@ -689,7 +694,8 @@ uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, int romSplit, 
             length -= subLength;
         } while (length > 0);
         
-        while ((destP - destBuffer) & 0x1fff) {
+        while ((destP - destBuffer) & 0x1fff) 
+		{
             *destP++ = 0;
         }
     }
@@ -701,9 +707,10 @@ uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, int romSplit, 
 // RLE encodes a buffer. The method can do both a
 // consecutive buffer or a buffer split in multiple 8kB buffers
 //
-uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int incr, uint32_t* destLength)
+uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int incr, uint32_t* destLength)
 {
-    if (!romSplit) {
+    if (romSplit == 0)
+	{
         printf("Encoding samples for original player\n");
         return rleEncode(binBuffer, length, incr, destLength);
     }
@@ -712,12 +719,13 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int incr, ui
     
     uint8_t* destBuffer = new uint8_t[2 * length];
     int srcOffset = 0;
-    const uint32_t SUB_SAMPLE_LEN = 10000 * 2;
+    const uint32_t SUB_SAMPLE_LEN = 10000 * romSplit / 0x2000; // TODO
     *destLength = 0;
 
     // For rom version of replayer
     uint32_t count = length / 3;
-    while (count > 0) {
+    while (count > 0) 
+	{
         int curCount = std::min(count, SUB_SAMPLE_LEN);
 
         uint8_t* encBuffer;
@@ -725,19 +733,20 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int incr, ui
 
         for (;;) {
             encBuffer = rleEncode(binBuffer + 3 * srcOffset, curCount * 3, incr, &encLen);       
-            if (encLen <= 0x2000 * 2) {
+            if (encLen <= romSplit)
+			{
                 break;
             }
             delete [] encBuffer;
             curCount = 995 * curCount / 1000;
         }
         memcpy(destBuffer + *destLength, encBuffer, encLen);
-        memset(destBuffer + *destLength + encLen, 0, 0x2000 * 2 - encLen);
+        memset(destBuffer + *destLength + encLen, 0, romSplit - encLen);
 
         delete [] encBuffer;
 
         count -= curCount;
-        *destLength += 0x2000 * 2;
+        *destLength += romSplit;
         srcOffset += curCount;
     }
 
@@ -751,7 +760,7 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int incr, ui
 //
 void convertWav(const std::string& filename, int saveInternal, int costFunction, int interpolation,
                uint32_t cpuFrequency, uint32_t dt1, uint32_t dt2, uint32_t dt3, 
-               int ratio, double amplitude, int romSplit, int packingType)
+               int ratio, double amplitude, uint32_t romSplit, int packingType)
 {
     // Load samples from wav file
     if (ratio < 1) 
@@ -878,94 +887,94 @@ public:
 //
 int main(int argc, char** argv)
 {
-	Args args(argc, argv);
-
-	std::string filename = args.getString("filename", "");
-	int romSplit = args.getInt("r", 0) * 1024;
-	bool saveInternal = args.exists("si");
-	int packingType = args.getInt("p", 0);
-	int ratio = args.getInt("rto", 1);
-	int interpolation = args.getInt("i", 2);
-	int costFunction = args.getInt("c", 2);
-	uint32_t cpuFrequency = args.getInt("cpuf", 3579545);
-	uint32_t amplitude = args.getInt("a", 115);
-	uint32_t dt1 = args.getInt("dt1", 0);
-	uint32_t dt2 = args.getInt("dt2", 0);
-	uint32_t dt3 = args.getInt("dt3", 0);
-
-	if (dt1 == 0 || dt2 == 0 || dt3 == 0)
-	{
-		throw new std::invalid_argument("Invalid timings");
-	}
-
-	if (filename.empty())
-	{
-		printf("Usage:\n");
-		printf("pcmenc.exe [-r] [-e <encoding>] [-cpuf <freq>] [-p <packing>]\n");
-		printf("           [-dt1 <tstates>] [-dt2 <tstates>] [-dt3 <tstates>]\n");
-		printf("           [-a <amplitude>] [-rto <ratio>] <wavfile>\n");
-		printf("\n");
-		printf("    -r              Pack encoded wave into 8kB blocks for rom replayers\n");
-		printf("\n");
-		printf("    -p <packing>    Packing type:                b7...b5|b4...b0\n");
-		printf("                        0 = 4bit RLE (default)   run len|PSG vol\n");
-		printf("                        1 = 3 bit RLE; as before but b5 =0\n");
-		printf("                        1 = 1 byte vol\n");
-		printf("                        2 = 1 byte {ch, vol} pairs\n");
-		printf("\n");
-		printf("    -cpuf <freq>    CPU frequency of the CPU (Hz)\n");
-		printf("                        Default: 3579545\n");
-		printf("\n");
-		printf("    -dt1 <tstates>  CPU Cycles between update of channel A and B\n");
-		printf("    -dt2 <tstates>  CPU Cycles between update of channel B and C\n");
-		printf("    -dt3 <tstates>  CPU Cycles between update of channel C and A\n");
-		printf("                    The replayer sampling base period is \n");
-		printf("                          T = dt1+dt2+dt3\n");
-		printf("                    Defaults (depends on rto):\n");
-		printf("                        ratio = 1 : dt1=32, dt2=27,  dt3=266 => 11014Hz\n");
-		printf("                        ratio = 2 : dt1=156,dt2=27,  dt3=141 => 22096Hz \n");
-		printf("                        ratio = 3 : dt1=73, dt2=84,  dt3=87  => 44011Hz\n");
-		printf("\n");
-		printf("                    Note that the replayed sampling base period depends\n");
-		printf("                    on the replayer and how many samples it will play\n");
-		printf("                    in each PSG tripplet update. The default settings\n");
-		printf("                    are based on:\n");
-		printf("                        1 : replayer_core11025 which plays one sample per\n");
-		printf("                            psg tripplet update\n");
-		printf("                        2 : replayer_core22050 which plays two sample per\n");
-		printf("                            psg tripplet update\n");
-		printf("                        3 : replayer_core44100 which plays three sample\n");
-		printf("                            per psg tripplet update \n");
-		printf("\n");
-		printf("    -a <amplitude>  Input amplitude before encoding.\n");
-		printf("                        Default 115\n");
-		printf("\n");
-		printf("    -rto <ratio>   Number of input samples per PSG triplet\n");
-		printf("                        Default: 1\n");
-		printf("\n");
-		printf("                   This parameter can be used to oversample the input\n");
-		printf("                   wave. Note that this parameter also will affect the\n");
-		printf("                   replay rate based on how many samples per PSG tripplet\n");
-		printf("                   update the replayer uses.\n");
-		printf("\n");
-		printf("    -c <costfun>    Viterbi cost function:\n");
-		printf("                        1   : ABS measure\n");
-		printf("                        2   : Standard MSE (default)\n");
-		printf("                        > 2 : Lagrange interpolation of order 'c'\n");
-		printf("\n");
-		printf("    -i <interpol>   Resampling interpolation mode:\n");
-		printf("                        0 = Linear interpolation\n");
-		printf("                        1 = Quadratic interpolation\n");
-		printf("                        2 = Lagrange interpolation (default)\n");
-		printf("\n");
-		printf("    <wavfile>       Filename of .wav file to encode\n");
-		printf("\n");
-
-		return 0;
-	}
-
 	try
 	{
+		Args args(argc, argv);
+
+		std::string filename = args.getString("filename", "");
+		uint32_t romSplit = args.getInt("r", 0) * 1024;
+		bool saveInternal = args.exists("si");
+		int packingType = args.getInt("p", 0);
+		int ratio = args.getInt("rto", 1);
+		int interpolation = args.getInt("i", 2);
+		int costFunction = args.getInt("c", 2);
+		uint32_t cpuFrequency = args.getInt("cpuf", 3579545);
+		uint32_t amplitude = args.getInt("a", 115);
+		uint32_t dt1 = args.getInt("dt1", 0);
+		uint32_t dt2 = args.getInt("dt2", 0);
+		uint32_t dt3 = args.getInt("dt3", 0);
+
+		if (dt1 == 0 || dt2 == 0 || dt3 == 0)
+		{
+			throw new std::invalid_argument("Invalid timings");
+		}
+
+		if (filename.empty())
+		{
+			printf("Usage:\n");
+			printf("pcmenc.exe [-r] [-e <encoding>] [-cpuf <freq>] [-p <packing>]\n");
+			printf("           [-dt1 <tstates>] [-dt2 <tstates>] [-dt3 <tstates>]\n");
+			printf("           [-a <amplitude>] [-rto <ratio>] <wavfile>\n");
+			printf("\n");
+			printf("    -r <n>          Pack encoded wave into <n>KB blocks for rom replayers\n");
+			printf("\n");
+			printf("    -p <packing>    Packing type:                b7...b5|b4...b0\n");
+			printf("                        0 = 4bit RLE (default)   run len|PSG vol\n");
+			printf("                        1 = 3 bit RLE; as before but b5 =0\n");
+			printf("                        2 = 1 byte vol\n");
+			printf("                        3 = 1 byte {ch, vol} pairs\n");
+			printf("\n");
+			printf("    -cpuf <freq>    CPU frequency of the CPU (Hz)\n");
+			printf("                        Default: 3579545\n");
+			printf("\n");
+			printf("    -dt1 <tstates>  CPU Cycles between update of channel A and B\n");
+			printf("    -dt2 <tstates>  CPU Cycles between update of channel B and C\n");
+			printf("    -dt3 <tstates>  CPU Cycles between update of channel C and A\n");
+			printf("                    The replayer sampling base period is \n");
+			printf("                          T = dt1+dt2+dt3\n");
+			printf("                    Defaults (depends on rto):\n");
+			printf("                        ratio = 1 : dt1=32, dt2=27,  dt3=266 => 11014Hz\n");
+			printf("                        ratio = 2 : dt1=156,dt2=27,  dt3=141 => 22096Hz \n");
+			printf("                        ratio = 3 : dt1=73, dt2=84,  dt3=87  => 44011Hz\n");
+			printf("\n");
+			printf("                    Note that the replayed sampling base period depends\n");
+			printf("                    on the replayer and how many samples it will play\n");
+			printf("                    in each PSG tripplet update. The default settings\n");
+			printf("                    are based on:\n");
+			printf("                        1 : replayer_core11025 which plays one sample per\n");
+			printf("                            psg tripplet update\n");
+			printf("                        2 : replayer_core22050 which plays two sample per\n");
+			printf("                            psg tripplet update\n");
+			printf("                        3 : replayer_core44100 which plays three sample\n");
+			printf("                            per psg tripplet update \n");
+			printf("\n");
+			printf("    -a <amplitude>  Input amplitude before encoding.\n");
+			printf("                        Default 115\n");
+			printf("\n");
+			printf("    -rto <ratio>   Number of input samples per PSG triplet\n");
+			printf("                        Default: 1\n");
+			printf("\n");
+			printf("                   This parameter can be used to oversample the input\n");
+			printf("                   wave. Note that this parameter also will affect the\n");
+			printf("                   replay rate based on how many samples per PSG tripplet\n");
+			printf("                   update the replayer uses.\n");
+			printf("\n");
+			printf("    -c <costfun>    Viterbi cost function:\n");
+			printf("                        1   : ABS measure\n");
+			printf("                        2   : Standard MSE (default)\n");
+			printf("                        > 2 : Lagrange interpolation of order 'c'\n");
+			printf("\n");
+			printf("    -i <interpol>   Resampling interpolation mode:\n");
+			printf("                        0 = Linear interpolation\n");
+			printf("                        1 = Quadratic interpolation\n");
+			printf("                        2 = Lagrange interpolation (default)\n");
+			printf("\n");
+			printf("    <wavfile>       Filename of .wav file to encode\n");
+			printf("\n");
+
+			return 0;
+		}
+
 		convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, ratio, (double)amplitude / 100, romSplit, packingType);
 		return 1;
 	}
