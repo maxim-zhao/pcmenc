@@ -2,6 +2,7 @@ pcmenc
 ======
 
 This is a clone of [pcmenc](http://www.dvik-joyrex.com/tools.html), a program which generates high-quality sample data plus matching assembly code players for MSX. 
+
 The features I have added are:
 
 * Support for targetting the SN76489 audio chip, as found in:
@@ -9,6 +10,7 @@ The features I have added are:
  * Sega Game Gear
  * Sega Game 1000
  * Sega Computer 3000
+ * Sega Megadrive/Genesis/Mega Drive
  * ColecoVision
  * BBC Micro
  * Lots of arcade games and esoteric home computers
