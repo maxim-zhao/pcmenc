@@ -158,7 +158,7 @@ double* resample(double* in , uint32_t inLen,  uint32_t inRate,
 	st_updateeffect(&eff, &iinfo, &oinfo, 0);
 
 	// Convert to required format
-	st_sample_t* ibuf = (st_sample_t*)calloc(sizeof(st_sample_t), inLen);	
+	st_sample_t* ibuf = new st_sample_t[inLen];	
 	for (uint32_t i = 0; i < inLen; i++) 
 	{
         ibuf[i] = ST_FLOAT_DDWORD_TO_SAMPLE(in[i]);
@@ -169,7 +169,7 @@ double* resample(double* in , uint32_t inLen,  uint32_t inRate,
 
 	// Allocate output buffer
 	uint32_t outBufLen = (uint32_t)((double)inLen * outRate / inRate) + 500;
-	st_sample_t* obuf = (st_sample_t*)calloc(sizeof(st_sample_t), outBufLen);
+	st_sample_t* obuf = new st_sample_t[outBufLen];
 	
 	// Pass samples into resampler
 	st_size_t iLen = 0;
@@ -186,7 +186,7 @@ double* resample(double* in , uint32_t inLen,  uint32_t inRate,
             break;
         }
     }
-	free(ibuf);
+	delete [] ibuf;
 
 	// Flush resampler
     st_size_t odone = ST_BUFSIZ;
@@ -199,14 +199,14 @@ double* resample(double* in , uint32_t inLen,  uint32_t inRate,
     double* outBuf = NULL;
     if (oLen > 0) 
 	{
-        outBuf = (double*)calloc(sizeof(double), oLen);
+        outBuf = new double[oLen];
         for (uint32_t i = 0; i < oLen; i++)
 		{
             outBuf[i] = ST_SAMPLE_TO_FLOAT_DDWORD(obuf[i]);
         }
         *outLen = (uint32_t)oLen;
     }
-    free(obuf);
+    delete [] obuf;
     
     return outBuf;
 }
@@ -267,7 +267,7 @@ double* loadSamples(const std::string& filename, uint32_t wantedFrequency, uint3
     uint32_t bytesPerSample = ((bitsPerSample + 7) / 8);
     uint32_t sampleNum = dataSize / bytesPerSample / channels;
 
-    double* tempSamples = (double*)calloc(sizeof(double), sampleNum);
+    double* tempSamples = new double[sampleNum];
 
     for (uint32_t i = 0; i < sampleNum; ++i)
 	{
@@ -295,7 +295,7 @@ double* loadSamples(const std::string& filename, uint32_t wantedFrequency, uint3
     double* retSamples;
     if (ABS(1.0 * wantedFrequency / samplesPerSec - 1) < MIN_ALLOWED_FREQ_DIFF) 
 	{
-        retSamples = (double*)calloc(sizeof(double), sampleNum);
+        retSamples = new double[sampleNum];
         memcpy(retSamples, tempSamples, sampleNum * sizeof(double));
         *count = sampleNum;
     }
@@ -305,7 +305,7 @@ double* loadSamples(const std::string& filename, uint32_t wantedFrequency, uint3
         retSamples = resample(tempSamples, sampleNum, samplesPerSec, wantedFrequency, count);
     }
 
-    free(tempSamples);
+    delete [] tempSamples;
 
     return retSamples;
 }
@@ -328,7 +328,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
                int interpolation, int costFunction,
                int saveInternal, uint32_t* binSize)
 {
-    double* y = (double*)calloc(sizeof(double), length + 256);
+    double* y = new double[length + 256];
 
     double vol[16];
 #ifdef MSX
@@ -383,7 +383,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     printf("   dt3 = %d  (Normalized: %1.3f)\n", (int)idt3, dt[2]);
 
     int     N = (length + samplesPerTriplet - 1) / samplesPerTriplet * 3;
-    double* x = (double*)calloc(sizeof(double), N);
+    double* x = new double[N];
 
     int     nL,nR;
 
@@ -461,8 +461,8 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 
     for (int i = 0; i < 256; i++)
 	{
-        Stt[i] = (uint8_t*)calloc(sizeof(uint8_t), N);
-        Itt[i] = (uint8_t*)calloc(sizeof(uint8_t), N);
+        Stt[i] = new uint8_t[N];
+        Itt[i] = new uint8_t[N];
         L[i] = 0;
         St[i] = 1;
         It[i] = 1;
@@ -541,8 +541,8 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 
     printf("\nThe cost metric in Viterbi is about %3.3f\n\n", L[minIndex]);
 
-    uint8_t* P = (uint8_t*)calloc(sizeof(uint8_t), N);
-    uint8_t* I = (uint8_t*)calloc(sizeof(uint8_t), N);
+    uint8_t* P = new uint8_t[N];
+    uint8_t* I = new uint8_t[N];
 
     P[N - 1] = Stt[minIndex][N - 1];
     I[N - 1] = Itt[minIndex][N - 1];
@@ -553,7 +553,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     }
 
 
-    double* V = (double*)calloc(sizeof(double), N);
+    double* V = new double[N];
     
     for (int t = 0; t <N; t++)
 	{
@@ -585,15 +585,15 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     double  var = en - mi*mi*3/N;
     printf("SNR is about %3.2f\n", 10 * log10( var / er ));
 
-    free(y);
-    free(x);
-    free(P);
-    free(V);
+    delete [] y;
+	delete[] x;
+	delete[] P;
+	delete[] V;
        
     for (int i = 0; i < 256; i++)
 	{
-        free(Stt[i]);
-        free(Itt[i]);
+		delete[] Stt[i];
+		delete[] Itt[i];
     }
 
     *binSize = N;
@@ -609,7 +609,7 @@ uint8_t* rleEncode(const uint8_t* buffer, int length, int incr, uint32_t* encLen
 {
     const uint8_t* I = buffer;
 
-    uint8_t* sRet = (uint8_t*)calloc(sizeof(uint8_t), 2 * length);
+    uint8_t* sRet = new uint8_t[2 * length];
     sRet[0] = ((length / 3) >> 0) & 0xff;
     sRet[1] = ((length / 3) >> 8) & 0xff;
 
@@ -656,7 +656,7 @@ void saveEncodedBuffer(const std::string& filename, const uint8_t* buffer, int l
 
 uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, int romSplit, uint32_t* destLength)
 {
-    uint8_t* destBuffer = (uint8_t*)calloc(sizeof(uint8_t), 2 * length + 500);
+    uint8_t* destBuffer = new uint8_t[2 * length + 500];
     uint8_t* destP = destBuffer;
     if (!romSplit) {
         *destP++ = (uint8_t)((length >> 0) & 0xff);
@@ -712,7 +712,7 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int incr, ui
 
     printf("Encoding samples for rom player\n");
     
-    uint8_t* destBuffer = (uint8_t*)calloc(sizeof(uint8_t), 2 * length);
+    uint8_t* destBuffer = new uint8_t[2 * length];
     int srcOffset = 0;
     const uint32_t SUB_SAMPLE_LEN = 10000 * 2;
     *destLength = 0;
@@ -730,13 +730,13 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int incr, ui
             if (encLen <= 0x2000 * 2) {
                 break;
             }
-            free(encBuffer);
+            delete [] encBuffer;
             curCount = 995 * curCount / 1000;
         }
         memcpy(destBuffer + *destLength, encBuffer, encLen);
         memset(destBuffer + *destLength + encLen, 0, 0x2000 * 2 - encLen);
 
-        free(encBuffer);
+        delete [] encBuffer;
 
         count -= curCount;
         *destLength += 0x2000 * 2;
@@ -805,8 +805,8 @@ int convertWav(const std::string& filename, int saveInternal, int costFunction, 
 
     // Save the encoded buffer
     saveEncodedBuffer(filename + ".pcmenc", destBuffer, destLength);
-    free(destBuffer);
-    free(binBuffer);
+    delete [] destBuffer;
+    delete [] binBuffer;
 
     return 1;
 }
