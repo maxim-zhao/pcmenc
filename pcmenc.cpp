@@ -44,6 +44,22 @@
 #define str2ul(s) ((uint32_t)s[0]<<0|(uint32_t)s[1]<<8|(uint32_t)s[2]<<16|(uint32_t)s[3]<<24)
 #define needSwap() (*(uint32_t*)"A   " == 0x41202020)
 
+enum PackingType
+{
+	PackingType_RLE = 0,
+	PackingType_RLE3 = 1,
+	PackingType_VolByte = 2,
+	PackingType_ChannelVolByte = 3,
+	PackingType_PackedVol = 4
+};
+
+enum InterpolationType
+{
+	Interpolation_Linear = 0,
+	Interpolation_Quadratic = 1,
+	Interpolation_Lagrange11 = 2
+};
+
 /* Lagrange's classical polynomial interpolation */
 static double interpolate(const double data[], int index, double dt, int numLeft, int numRight)
 {
@@ -327,7 +343,7 @@ void dump(const std::string filename, const uint8_t* pData, int byteCount)
 //
 uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples, int length, 
                uint32_t idt1, uint32_t idt2, uint32_t idt3, 
-               int interpolation, int costFunction,
+               InterpolationType interpolation, int costFunction,
                int saveInternal, uint32_t& binSize)
 {
     double* y = new double[length + 256];
@@ -392,17 +408,17 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 
     switch (interpolation)
 	{
-    case 0:
+    case Interpolation_Linear:
         printf("   Resampling using Linear interpolation\n");
         numLeft=0;
         numRight=1;
         break;
-    case 1:
+    case Interpolation_Quadratic:
         printf("   Resampling using Quadratic interpolation\n");
         numLeft=0;
         numRight=2;
         break;
-    case 2:
+    case Interpolation_Lagrange11:
         printf("   Resampling using Lagrange interpolation on 11 points\n");
         numLeft=5;
         numRight=5;
@@ -410,7 +426,9 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 	default:
 		throw std::invalid_argument("Invalid interpolation type");
 	}
-    for (int i = 0; i < numOutputs / 3; i++) {
+
+    for (int i = 0; i < numOutputs / 3; i++) 
+	{
         int     t0 = (samplesPerTriplet * i);
         double  t1 = (samplesPerTriplet * (i+dt[0]));
         double  t2 = (samplesPerTriplet * (i+dt[0]+dt[1]));
@@ -759,9 +777,9 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int inc
 // Converts a wav file to PSG binary format. The method can do both a
 // consecutive buffer or a buffer split in multiple 8kB buffers
 //
-void convertWav(const std::string& filename, int saveInternal, int costFunction, int interpolation,
+void convertWav(const std::string& filename, int saveInternal, int costFunction, InterpolationType interpolation,
                uint32_t cpuFrequency, uint32_t dt1, uint32_t dt2, uint32_t dt3, 
-               int ratio, double amplitude, uint32_t romSplit, int packingType)
+               int ratio, double amplitude, uint32_t romSplit, PackingType packingType)
 {
     // Load samples from wav file
     if (ratio < 1) 
@@ -792,23 +810,26 @@ void convertWav(const std::string& filename, int saveInternal, int costFunction,
 
     // RLE encode the buffer. Either as one consecutive RLE encoded
     // buffer, or as 8kB small buffers, each RLE encoded with header.
-    uint8_t* destBuffer = 0;
+    uint8_t* destBuffer;
     uint32_t destLength = 0;
 
     switch (packingType) 
 	{
-    case 0: //4 bit RLE
+	case PackingType_RLE:
         destBuffer = rlePack(binBuffer, binSize, romSplit, 1, &destLength);
         break;
-    case 1: //3 bit RLE
+	case PackingType_RLE3:
         destBuffer = rlePack(binBuffer, binSize, romSplit, 2, &destLength);
         break;
-    case 2:
+	case PackingType_VolByte:
         destBuffer = chVolPack(0, binBuffer, binSize, romSplit, &destLength);
         break;
-    case 3:
+	case PackingType_ChannelVolByte:
         destBuffer = chVolPack(1, binBuffer, binSize, romSplit, &destLength);
         break;
+	case PackingType_PackedVol:
+	default:
+		throw new std::invalid_argument("Invalid packing type");
     }
 
     // Save the encoded buffer
@@ -895,9 +916,9 @@ int main(int argc, char** argv)
 		std::string filename = args.getString("filename", "");
 		uint32_t romSplit = args.getInt("r", 0) * 1024;
 		bool saveInternal = args.exists("si");
-		int packingType = args.getInt("p", 0);
+		PackingType packingType = (PackingType)args.getInt("p", PackingType_RLE);
 		int ratio = args.getInt("rto", 1);
-		int interpolation = args.getInt("i", 2);
+		InterpolationType interpolation = (InterpolationType)args.getInt("i", Interpolation_Lagrange11);
 		int costFunction = args.getInt("c", 2);
 		uint32_t cpuFrequency = args.getInt("cpuf", 3579545);
 		uint32_t amplitude = args.getInt("a", 115);
