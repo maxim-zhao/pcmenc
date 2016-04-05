@@ -183,7 +183,7 @@ double* resample(double* in, uint32_t inLen, uint32_t inRate, uint32_t outRate, 
 
 	// Convert to required format
 	st_sample_t* ibuf = new st_sample_t[inLen];	
-	for (uint32_t i = 0; i < inLen; i++) 
+	for (uint32_t i = 0; i < inLen; ++i)
 	{
         ibuf[i] = ST_FLOAT_DDWORD_TO_SAMPLE(in[i]);
     }
@@ -224,7 +224,7 @@ double* resample(double* in, uint32_t inLen, uint32_t inRate, uint32_t outRate, 
     if (oLen > 0) 
 	{
         outBuf = new double[oLen];
-        for (uint32_t i = 0; i < oLen; i++)
+        for (uint32_t i = 0; i < oLen; ++i)
 		{
             outBuf[i] = ST_SAMPLE_TO_FLOAT_DDWORD(obuf[i]);
         }
@@ -435,14 +435,14 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 		dump("y.bin", (uint8_t*)y, (length * 256) * sizeof(double));
     }
 
-	uint8_t nxtS[16*16*16];
+	int nxtS[16*16*16];
 	for (int i = 0; i < 16; i++) 
 	{
 		for (int j = 0; j < 16; j++) 
 		{
 			for (int in = 0; in < 16; in++) 
 			{
-				nxtS[i << 8 | j << 4 | in] = (uint8_t)(j * 16 + in);
+				nxtS[i << 8 | j << 4 | in] = j << 4 | in;
 			}
 		}
 	}
@@ -611,7 +611,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 // RLE encodes a PSG sample buffer. The encoded buffer is created and returned
 // by the function.
 //
-uint8_t* rleEncode(const uint8_t* pData, int dataLen, int rleIncrement, uint32_t& resultLen)
+uint8_t* rleEncode(const uint8_t* pData, int dataLen, int rleIncrement, int& resultLen)
 {
 	// Allocate a worst-case-sized buffer
     uint8_t* result = new uint8_t[2 * dataLen + 2];
@@ -663,7 +663,7 @@ void saveEncodedBuffer(const std::string& filename, const uint8_t* buffer, int l
 	printf("done\n");
 }
 
-uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, uint32_t romSplit, uint32_t* destLength)
+uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int* destLength)
 {
     uint8_t* destBuffer = new uint8_t[2 * length + 500];
     uint8_t* destP = destBuffer;
@@ -718,7 +718,7 @@ uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, uint32_t romSp
 // RLE encodes a buffer. The method can do both a
 // consecutive buffer or a buffer split in multiple 8kB buffers
 //
-uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int rleIncrement, uint32_t& resultLen)
+uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncrement, int& resultLen)
 {
     if (romSplit == 0)
 	{
@@ -742,14 +742,14 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int rle
 
 	int tripletsEncoded = 0;
 	int tripletsRemaining = length / 3;
-	uint32_t encodedLength;
-	uint32_t totalEncodedLength = 0;
-	uint32_t totalPadding = 0;
+	int encodedLength;
+	int totalEncodedLength = 0;
+	int totalPadding = 0;
 
 	while (tripletsRemaining > 0)
 	{
 		// We binary search for the point where the packing exceeds the bank size
-		int tripletCount = tripletsRemaining; // Starting point
+		int tripletCount = std::min(romSplit * 15 / 3, tripletsRemaining); // Starting point: maximum theoretical count (maximum RLE on every sample)
 		int countLower = 0; // Highest input length which produced a smaller size
 		int countHigher = std::numeric_limits<int>::max(); // Lowest input length whch produced a larger size
 		uint8_t* pEncoded;
@@ -852,15 +852,15 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int rle
 // consecutive buffer or a buffer split in multiple 8kB buffers
 //
 void convertWav(const std::string& filename, bool saveInternal, int costFunction, InterpolationType interpolation,
-               uint32_t cpuFrequency, uint32_t dt1, uint32_t dt2, uint32_t dt3, 
-               int ratio, double amplitude, uint32_t romSplit, PackingType packingType, Chip chip)
+               int cpuFrequency, int dt1, int dt2, int dt3,
+               int ratio, double amplitude, int romSplit, PackingType packingType, Chip chip)
 {
     // Load samples from wav file
     if (ratio < 1) 
 	{
 		throw std::invalid_argument("Invalid number of inputs per output");
     }
-    uint32_t frequency = cpuFrequency * ratio / (dt1 + dt2 + dt3);
+	int frequency = cpuFrequency * ratio / (dt1 + dt2 + dt3);
     if (frequency == 0) 
 	{
 		throw std::invalid_argument("Invalid frequency");
@@ -907,7 +907,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
     // RLE encode the buffer. Either as one consecutive RLE encoded
     // buffer, or as 8kB small buffers, each RLE encoded with header.
     uint8_t* destBuffer;
-    uint32_t destLength;
+    int destLength;
 
     switch (packingType) 
 	{
@@ -983,7 +983,7 @@ public:
 		return it->second;
 	}
 
-	uint32_t getInt(const std::string& name, uint32_t defaultValue)
+	int getInt(const std::string& name, uint32_t defaultValue)
 	{
 		std::map<std::string, std::string>::const_iterator it = _args.find(name);
 		if (it == _args.end())
@@ -1010,17 +1010,17 @@ int main(int argc, char** argv)
 		Args args(argc, argv);
 
 		std::string filename = args.getString("filename", "");
-		uint32_t romSplit = args.getInt("r", 0) * 1024;
+		int romSplit = args.getInt("r", 0) * 1024;
 		bool saveInternal = args.exists("si");
 		PackingType packingType = (PackingType)args.getInt("p", PackingType_RLE);
 		int ratio = args.getInt("rto", 1);
 		InterpolationType interpolation = (InterpolationType)args.getInt("i", Interpolation_Lagrange11);
 		int costFunction = args.getInt("c", 2);
-		uint32_t cpuFrequency = args.getInt("cpuf", 3579545);
-		uint32_t amplitude = args.getInt("a", 115);
-		uint32_t dt1 = args.getInt("dt1", 0);
-		uint32_t dt2 = args.getInt("dt2", 0);
-		uint32_t dt3 = args.getInt("dt3", 0);
+		int cpuFrequency = args.getInt("cpuf", 3579545);
+		int amplitude = args.getInt("a", 115);
+		int dt1 = args.getInt("dt1", 0);
+		int dt2 = args.getInt("dt2", 0);
+		int dt3 = args.getInt("dt3", 0);
 		Chip chip = (Chip)args.getInt("chip", Chip_SN76489);
 
 		if (filename.empty())
