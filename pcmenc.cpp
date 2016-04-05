@@ -60,6 +60,12 @@ enum InterpolationType
 	Interpolation_Lagrange11 = 2
 };
 
+enum Chip
+{
+	Chip_AY38910 = 0,
+	Chip_SN76489 = 1
+};
+
 /* Lagrange's classical polynomial interpolation */
 static double interpolate(const double data[], int index, double dt, int numLeft, int numRight)
 {
@@ -344,26 +350,9 @@ void dump(const std::string filename, const uint8_t* pData, int byteCount)
 uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples, int length, 
                uint32_t idt1, uint32_t idt2, uint32_t idt3, 
                InterpolationType interpolation, int costFunction,
-               bool saveInternal, uint32_t& binSize)
+               bool saveInternal, uint32_t& binSize, const double vol[16])
 {
     double* y = new double[length + 256];
-
-    double vol[16];
-#ifdef MSX
-	// MSX
-	vol[0] = 0;
-	for (int i = 1; i < 16; i++)
-	{
-		vol[i] = pow(2.0, i / 2.0) / pow(2.0, 7.5);
-	}
-#else
-	// SMS
-	for (int i = 0; i < 15; i++)
-	{
-		vol[i] = pow(10.0, -0.1*i);
-	}
-	vol[15] = 0.0;
-#endif
 
     double inputMin = 1.0E50;
     double inputMax = -1.0E50;
@@ -864,7 +853,7 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int rle
 //
 void convertWav(const std::string& filename, bool saveInternal, int costFunction, InterpolationType interpolation,
                uint32_t cpuFrequency, uint32_t dt1, uint32_t dt2, uint32_t dt3, 
-               int ratio, double amplitude, uint32_t romSplit, PackingType packingType)
+               int ratio, double amplitude, uint32_t romSplit, PackingType packingType, Chip chip)
 {
     // Load samples from wav file
     if (ratio < 1) 
@@ -889,8 +878,31 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
 	printf("done\n");
     
     // Do viterbi encoding
+	double vol[16];
+	switch (chip)
+	{
+	case Chip_AY38910:
+		// MSX
+		vol[0] = 0;
+		for (int i = 1; i < 16; i++)
+		{
+			vol[i] = pow(2.0, i / 2.0) / pow(2.0, 7.5);
+		}
+		break;
+	case Chip_SN76489:
+		// SMS
+		for (int i = 0; i < 15; i++)
+		{
+			vol[i] = pow(10.0, -0.1*i);
+		}
+		vol[15] = 0.0;
+		break;
+	default:
+		throw std::invalid_argument("Invalid chip");
+	}
+
     uint32_t binSize;
-    uint8_t* binBuffer = viterbi(ratio, amplitude, samples, samplesLen, dt1, dt2, dt3, interpolation, costFunction, saveInternal, binSize);
+    uint8_t* binBuffer = viterbi(ratio, amplitude, samples, samplesLen, dt1, dt2, dt3, interpolation, costFunction, saveInternal, binSize, vol);
 
     // RLE encode the buffer. Either as one consecutive RLE encoded
     // buffer, or as 8kB small buffers, each RLE encoded with header.
@@ -1009,11 +1021,7 @@ int main(int argc, char** argv)
 		uint32_t dt1 = args.getInt("dt1", 0);
 		uint32_t dt2 = args.getInt("dt2", 0);
 		uint32_t dt3 = args.getInt("dt3", 0);
-
-		if (dt1 == 0 || dt2 == 0 || dt3 == 0)
-		{
-			throw std::invalid_argument("Invalid timings");
-		}
+		Chip chip = (Chip)args.getInt("chip", Chip_SN76489);
 
 		if (filename.empty())
 		{
@@ -1064,13 +1072,17 @@ int main(int argc, char** argv)
 				"                        1 = Quadratic interpolation\n"
 				"                        2 = Lagrange interpolation (default)\n"
 				"\n"
+				"    -chip <chip>    Chip type:\n"
+				"                        0 = AY-3-8910/YM2149F (MSX sound chip)\n"
+				"                        1 = SN76489/SN76496/NCR8496 (SMS sound chip) (default)\n"
+				"\n"
 				"    <wavfile>       Filename of .wav file to encode\n"
 				"\n");
 
 			return 0;
 		}
 
-		convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, ratio, (double)amplitude / 100, romSplit, packingType);
+		convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, ratio, (double)amplitude / 100, romSplit, packingType, chip);
 		return 1;
 	}
 	catch (std::exception& e)
