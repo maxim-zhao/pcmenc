@@ -793,6 +793,7 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncre
 				{
 					// Need to re-compress
 					delete[] pEncoded;
+					tripletCount = countLower;
 					pEncoded = rleEncode(bankSrc, tripletCount * 3, rleIncrement, encodedLength);
 				}
 				break;
