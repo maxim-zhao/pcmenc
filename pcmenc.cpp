@@ -204,7 +204,7 @@ double* resample(double* in, uint32_t inLen, uint32_t inRate, uint32_t outRate, 
             break;
         }
     }
-	delete [] ibuf;
+	delete[] ibuf;
 
 	// Flush resampler
     st_size_t odone = ST_BUFSIZ;
@@ -224,7 +224,7 @@ double* resample(double* in, uint32_t inLen, uint32_t inRate, uint32_t outRate, 
         }
         outLen = (uint32_t)oLen;
     }
-    delete [] obuf;
+    delete[] obuf;
     
     return outBuf;
 }
@@ -323,7 +323,7 @@ double* loadSamples(const std::string& filename, uint32_t wantedFrequency, uint3
         retSamples = resample(tempSamples, sampleNum, samplesPerSec, wantedFrequency, count);
     }
 
-    delete [] tempSamples;
+    delete[] tempSamples;
 
     return retSamples;
 }
@@ -556,7 +556,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
         }
     }
 
-    printf("\nThe cost metric in Viterbi is about %3.3f\n\n", L[minIndex]);
+    printf("The cost metric in Viterbi is about %3.3f\n", L[minIndex]);
 
     uint8_t* P = new uint8_t[numOutputs];
     uint8_t* I = new uint8_t[numOutputs];
@@ -602,15 +602,15 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     double  var = en - mi*mi*3/numOutputs;
     printf("SNR is about %3.2f\n", 10 * log10( var / er ));
 
-	delete [] y;
-	delete [] x;
-	delete [] P;
-	delete [] V;
+	delete[] y;
+	delete[] x;
+	delete[] P;
+	delete[] V;
 
 	for (int i = 0; i < 256; i++)
 	{
-		delete [] Stt[i];
-		delete [] Itt[i];
+		delete[] Stt[i];
+		delete[] Itt[i];
 	}
 
     binSize = numOutputs;
@@ -624,15 +624,17 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 //
 uint8_t* rleEncode(const uint8_t* pData, int dataLen, int rleIncrement, uint32_t& resultLen)
 {
+	// Allocate a worst-case-sized buffer
     uint8_t* result = new uint8_t[2 * dataLen + 2];
+
 	// Start with the triplet count
 	size_t tripletCount = dataLen / 3;
 	result[0] = (tripletCount >> 0) & 0xff;
     result[1] = (tripletCount >> 8) & 0xff;
 
     int currentState[3] = { pData[0], pData[1], pData[2] };
-    int rleCounts[3] = {0, 0, 0};
-    int offsets[3] = {2, 3, 4};
+	int rleCounts[3] = { 0, 0, 0 };
+	int offsets[3] = { 2, 3, 4 };
 	int nextUnusedOffset = 5;
 
     for (int i = 3; i < dataLen; i++) 
@@ -667,7 +669,9 @@ uint8_t* rleEncode(const uint8_t* pData, int dataLen, int rleIncrement, uint32_t
 //
 void saveEncodedBuffer(const std::string& filename, const uint8_t* buffer, int length)
 {
+	printf("Saving %d bytes to %s...", length, filename.c_str());
 	dump(filename, buffer, length);
+	printf("done\n");
 }
 
 uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, uint32_t romSplit, uint32_t* destLength)
@@ -725,50 +729,132 @@ uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, uint32_t romSp
 // RLE encodes a buffer. The method can do both a
 // consecutive buffer or a buffer split in multiple 8kB buffers
 //
-uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int incr, uint32_t& resultLen)
+uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int rleIncrement, uint32_t& resultLen)
 {
     if (romSplit == 0)
 	{
-        printf("Encoding samples for original player\n");
-        return rleEncode(binBuffer, length, incr, resultLen);
+        printf("RLE encoding with no split\n");
+        auto result = rleEncode(binBuffer, length, rleIncrement, resultLen);
+		printf(
+			"- Encoded %d volume commands (%d bytes) to %d bytes of data,\n"
+			"  effective compression ratio %.2f%%\n",
+			length,
+			length / 2,
+			resultLen,
+			(1.0 * length / 2 - resultLen) / (length / 2) * 100);
+		return result;
     }
 
-    printf("Encoding samples for rom player\n");
+    printf("RLE encoding with splits at %dKB boundaries", romSplit / 1024);
     
     uint8_t* destBuffer = new uint8_t[2 * length];
-    int srcOffset = 0;
-    const uint32_t SUB_SAMPLE_LEN = 10000 * romSplit / 0x2000; // TODO
+	uint8_t* pDest = destBuffer;
     resultLen = 0;
 
-    // For rom version of replayer
-    uint32_t count = length / 3;
-    while (count > 0) 
+	int tripletsEncoded = 0;
+	int tripletsRemaining = length / 3;
+	uint32_t encodedLength;
+	uint32_t totalEncodedLength = 0;
+	uint32_t totalPadding = 0;
+
+	while (tripletsRemaining > 0)
 	{
-        int curCount = std::min(count, SUB_SAMPLE_LEN);
+		// We binary search for the point where the packing exceeds the bank size
+		int tripletCount = tripletsRemaining; // Starting point
+		int countLower = 0; // Highest input length which produced a smaller size
+		int countHigher = std::numeric_limits<int>::max(); // Lowest input length whch produced a larger size
+		uint8_t* pEncoded;
 
-        uint8_t* encBuffer;
-        uint32_t encLen = 0;
+		for (;;)
+		{
+			// Point at the data to compress
+			auto bankSrc = binBuffer + 3 * tripletsEncoded;
 
-        for (;;) {
-            encBuffer = rleEncode(binBuffer + 3 * srcOffset, curCount * 3, incr, encLen);       
-            if (encLen <= romSplit)
+			// Compress
+			pEncoded = rleEncode(bankSrc, tripletCount * 3, rleIncrement, encodedLength);
+
+			// If it exactly fits, we're done
+			if (encodedLength == romSplit)
 			{
-                break;
-            }
-            delete [] encBuffer;
-            curCount = 995 * curCount / 1000;
-        }
-        memcpy(destBuffer + resultLen, encBuffer, encLen);
-        memset(destBuffer + resultLen + encLen, 0, romSplit - encLen);
+				break;
+			}
 
-        delete [] encBuffer;
+			// If we got here, it was no good so we try again
+			if (encodedLength > romSplit)
+			{
+				// If it was bigger, remember that
+				countHigher = tripletCount;
+			}
+			else if (encodedLength < romSplit)
+			{
+				// If it was smaller, remember that
+				countLower = tripletCount;
 
-        count -= curCount;
-        resultLen += romSplit;
-        srcOffset += curCount;
-    }
+				// If we are on the last chunk, stop here
+				if (tripletCount == tripletsRemaining)
+				{
+					countHigher = countLower + 1;
+				}
+			}
 
-    return destBuffer;
+			// If we have found adjacent lengths, we are done
+			if (countLower == countHigher - 1)
+			{
+				if (tripletCount == countHigher)
+				{
+					// Need to re-compress
+					delete[] pEncoded;
+					pEncoded = rleEncode(bankSrc, tripletCount * 3, rleIncrement, encodedLength);
+				}
+				break;
+			}
+
+			// If we don't have a higher point, double
+			if (countHigher == std::numeric_limits<int>::max())
+			{
+				tripletCount *= 2;
+			}
+			else
+			{
+				// Else, guess at halfway between them
+				tripletCount = (countLower + countHigher) / 2;
+			}
+		}
+
+		// Update stats
+		totalEncodedLength += encodedLength;
+		tripletsEncoded += tripletCount;
+
+		// Copy in RLE data
+		std::copy(pEncoded, pEncoded + encodedLength, pDest);
+		pDest += encodedLength;
+		// Blank fill except on the past page
+		if (tripletsRemaining > tripletCount)
+		{
+			int lastPadding = romSplit - encodedLength;
+			totalPadding += lastPadding;
+			for (int i = 0; i < lastPadding; ++i)
+			{
+				*pDest++ = 0;
+			}
+		}
+
+		// Show some progress
+		printf(".");
+
+		tripletsRemaining -= tripletCount;
+	}
+	resultLen = (uint32_t)(pDest - destBuffer);
+	printf(
+		"done\n"
+		"- Encoded %d volume commands (%d bytes) to %d bytes of data\n"
+		"  (with %d bytes padding), effective compression ratio %.2f%%\n",
+		length,
+		length / 2,
+		resultLen,
+		totalPadding,
+		(1.0 * length / 2 - resultLen) / (length / 2) * 100);
+	return destBuffer;
 }
 
 
@@ -833,7 +919,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
 
     // Save the encoded buffer
     saveEncodedBuffer(filename + ".pcmenc", destBuffer, destLength);
-    delete [] destBuffer;
+    delete[] destBuffer;
 }
 
 class Args
