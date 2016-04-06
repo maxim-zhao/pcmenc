@@ -67,7 +67,7 @@ enum Chip
 };
 
 /* Lagrange's classical polynomial interpolation */
-static double interpolate(const double data[], int index, double dt, int numLeft, int numRight)
+static double interpolate(const double* data, int index, double dt, int numLeft, int numRight)
 {
     double result = 0.0;
     double t = (double) index + dt;
@@ -165,7 +165,7 @@ public:
 // Resamples a sample from inRate to outRate and returns a new buffer with
 // the resampled data and the length of the new buffer.
 //
-double* resample(double* in, uint32_t inLen, uint32_t inRate, uint32_t outRate, uint32_t& outLen)
+double* resample(double* in, int inLen, int inRate, int outRate, int& outLen)
 {
 	// Configure the resampler
     st_effect_t effect = 
@@ -177,13 +177,13 @@ double* resample(double* in, uint32_t inLen, uint32_t inRate, uint32_t outRate, 
     };
 	st_effect eff;
 	eff.h = &effect;
-	st_signalinfo_t iinfo = { inRate, 4, 0, 1, needSwap() };
-	st_signalinfo_t oinfo = { outRate, 4, 0, 1, needSwap() };
+	st_signalinfo_t iinfo = { (st_rate_t)inRate, 4, 0, 1, needSwap() };
+	st_signalinfo_t oinfo = { (st_rate_t)outRate, 4, 0, 1, needSwap() };
 	st_updateeffect(&eff, &iinfo, &oinfo, 0);
 
 	// Convert to required format
 	st_sample_t* ibuf = new st_sample_t[inLen];	
-	for (uint32_t i = 0; i < inLen; ++i)
+	for (int i = 0; i < inLen; ++i)
 	{
         ibuf[i] = ST_FLOAT_DDWORD_TO_SAMPLE(in[i]);
     }
@@ -205,7 +205,7 @@ double* resample(double* in, uint32_t inLen, uint32_t inRate, uint32_t outRate, 
         int rv = st_resample_flow(&eff, ibuf + iLen, obuf + oLen, &idone, &odone);
         iLen += idone;
         oLen += odone; 
-        if (rv == ST_EOF || iLen + idone > inLen) 
+        if (rv == ST_EOF || iLen + idone > (st_size_t)inLen) 
 		{
             break;
         }
@@ -239,7 +239,7 @@ double* resample(double* in, uint32_t inLen, uint32_t inRate, uint32_t outRate, 
 //////////////////////////////////////////////////////////////////////////////
 // Loads a wav file and creates a new buffer with sample data.
 //
-double* loadSamples(const std::string& filename, uint32_t wantedFrequency, uint32_t& count)
+double* loadSamples(const std::string& filename, int wantedFrequency, int& count)
 {
 	FileReader f(filename);
 
@@ -343,34 +343,125 @@ void dump(const std::string filename, const uint8_t* pData, int byteCount)
 	f.close();
 }
 
+template <int costFunction>
+__forceinline
+double Cost(double value)
+{
+	return pow(ABS(value), costFunction);
+}
+
+template <>
+__forceinline
+double Cost<1>(double value)
+{
+	return ABS(value);
+}
+
+template <>
+__forceinline
+double Cost<2>(double value)
+{
+	return value * value;
+}
+
+template <>
+__forceinline
+double Cost<3>(double value)
+{
+	return ABS(value * value * value);
+}
+
+template <int costFunction>
+//__forceinline
+int viterbi_inner(double* targetOutput, int numOutputs, double* effectiveVolumesCube, uint8_t* Stt[256], uint8_t* Itt[256], double* dt)
+{
+	// Costs of previous sample
+	double lastCosts[256];
+	std::fill_n(lastCosts, 256, 0.0);
+	// Starting point for min-cost search for each target
+	double maxCosts[256];
+	std::fill_n(maxCosts, 256, 1.0e50); // inf
+	int St[256];
+	int It[256];
+
+	for (int t = 0; t < numOutputs; t++)
+	{
+		double sampleCosts[256];
+		std::copy(maxCosts, maxCosts + 256, sampleCosts);
+
+		if (t % 4096 == 0)
+		{
+			printf("Processing %3.2f%%\r", 100.0 * t / numOutputs);
+		}
+
+		double sample = targetOutput[t];
+		int channel = t % 3;
+
+		for (int i = 0; i < 16 * 16 * 16; ++i)
+		{
+			double effectiveVolume = effectiveVolumesCube[i];
+
+			int cs = i >> 4; // Channels 0-1?
+			int ns = i & 0xff; // Channels 1-2?
+
+			double normVal = sample - effectiveVolume;
+			double cost = lastCosts[cs] + dt[channel] * Cost<costFunction>(normVal);
+
+			if (cost < sampleCosts[ns])
+			{
+				sampleCosts[ns] = cost;
+				St[ns] = cs;
+				It[ns] = i & 15; // Channel 2?
+			}
+		}
+
+		std::copy(sampleCosts, sampleCosts + 256, lastCosts);
+		for (int i = 0; i < 256; i++)
+		{
+			Stt[i][t] = (uint8_t)St[i];
+			Itt[i][t] = (uint8_t)It[i];
+		}
+	}
+
+	printf("Processing %3.2f%%\n", 100.0);
+
+	int minIndex = 0;
+	for (int i = 0; i < 256; i++)
+	{
+		if (lastCosts[minIndex] > lastCosts[i])
+		{
+			minIndex = i;
+		}
+	}
+
+	printf("The cost metric in Viterbi is about %3.3f\n", lastCosts[minIndex]);
+
+	return minIndex;
+}
+
+
 //////////////////////////////////////////////////////////////////////////////
 // Encodes sample data to be played on the PSG.
 // The output buffer needs to be three times the size of the input buffer
 //
 uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples, int length, 
-               uint32_t idt1, uint32_t idt2, uint32_t idt3, 
+               int idt1, int idt2, int idt3,
                InterpolationType interpolation, int costFunction,
-               bool saveInternal, uint32_t& binSize, const double vol[16])
+               bool saveInternal, int& binSize, const double vol[16])
 {
-    double* y = new double[length + 256];
+	// We normalise the inputs to the range 0..1, 
+	// plus add some padding on the end to avoid needing range checks at that end
+    double* normalisedInputs = new double[length + 256];
 
-    double inputMin = 1.0E50;
-    double inputMax = -1.0E50;
+	auto minmax = std::minmax_element(samples, samples + length);
+	double inputMin = *minmax.first;
+	double inputMax = *minmax.second;
 
-    for (int i = 0; i < length; i++)
+    for (int i = 0; i < length; i++) // vectorised
 	{
-        inputMin = MIN(samples[i], inputMin);
-        inputMax = MAX(samples[i], inputMax);
+        normalisedInputs[i] = amplitude * (samples[i] - inputMin) / (inputMax - inputMin);
     }
-
-    for (int i = 0; i < length; i++)
-	{
-        y[i] = amplitude * (samples[i] - inputMin) / (inputMax - inputMin);
-    }
-    for (int i = length; i < length + 256; i++)
-	{
-        y[i] = y[length - 1];
-    }
+	std::fill_n(normalisedInputs + length, 256, normalisedInputs[length - 1]);
 
     double dt[3];
 	uint32_t cyclesPerTriplet = idt1 + idt2 + idt3;
@@ -390,7 +481,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     printf("   dt3 = %d  (Normalized: %1.3f)\n", (int)idt3, dt[2]);
 
     int numOutputs = (length + samplesPerTriplet - 1) / samplesPerTriplet * 3;
-    double* x = new double[numOutputs];
+    double* targetOutput = new double[numOutputs];
 
 	int numLeft;
 	int numRight;
@@ -416,7 +507,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 		throw std::invalid_argument("Invalid interpolation type");
 	}
 
-    for (int i = 0; i < numOutputs / 3; i++) 
+    for (int i = 0; i < numOutputs / 3; i++) // 1200: can't tell if inter-iteration dependencies
 	{
         int     t0 = (samplesPerTriplet * i);
         double  t1 = (samplesPerTriplet * (i+dt[0]));
@@ -424,129 +515,52 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
         double  dt1 = t1-(int)t1;
         double  dt2 = t2-(int)t2;
 
-        x[3*i+0] =  y[t0];
-        x[3*i+1] =  interpolate(y,(int)t1,dt1,numLeft,numRight);
-        x[3*i+2] =  interpolate(y,(int)t2,dt2,numLeft,numRight);
+        targetOutput[3*i+0] =  normalisedInputs[t0];
+        targetOutput[3*i+1] =  interpolate(normalisedInputs,(int)t1,dt1,numLeft,numRight);
+        targetOutput[3*i+2] =  interpolate(normalisedInputs,(int)t2,dt2,numLeft,numRight);
     }
 
     if (saveInternal) 
 	{
-		dump("x.bin", (uint8_t*)x, numOutputs * sizeof(double));
-		dump("y.bin", (uint8_t*)y, (length * 256) * sizeof(double));
+		dump("targetOutput.bin", (uint8_t*)targetOutput, numOutputs * sizeof(double));
+		dump("y.bin", (uint8_t*)normalisedInputs, (length * 256) * sizeof(double));
     }
 
-	int nxtS[16*16*16];
-	for (int i = 0; i < 16; i++) 
+	double effectiveVolumesCube[16 * 16 * 16];
+	for (int i = 0; i < 16 * 16 * 16; ++i)
 	{
-		for (int j = 0; j < 16; j++) 
-		{
-			for (int in = 0; in < 16; in++) 
-			{
-				nxtS[i << 8 | j << 4 | in] = j << 4 | in;
-			}
-		}
-	}
-
-	double curV[16*16*16];
-	for (int i = 0; i < 16; i++) 
-	{
-		for (int j = 0; j < 16; j++) 
-		{
-			for (int in = 0; in < 16; in++) 
-			{
-				curV[i << 8 | j << 4 | in] = vol[i] + vol[j] + vol[in];
-			}
-		}
+		effectiveVolumesCube[i] = vol[(i >> 0) & 0xf] + vol[(i >> 4) & 0xf] + vol[(i >> 8) & 0xf];
 	}
 
     uint8_t* Stt[256];
     uint8_t* Itt[256];
-    double L[256];
-    uint8_t St[256];
-    uint8_t It[256];
 
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 256; i++) // Loop contains loop-carried data dependences that prevent vectorization
 	{
         Stt[i] = new uint8_t[numOutputs];
         Itt[i] = new uint8_t[numOutputs];
-        L[i] = 0;
-        St[i] = 1;
-        It[i] = 1;
     }
 
-    printf("   Using cost function: L%d\n",costFunction);
+    printf("   Using cost function: L%d\n", costFunction);
 
-    for (int t = 0; t < numOutputs; t++) 
+	int minIndex;
+	switch (costFunction)
 	{
-        double Ln[256];
-        for (int i = 0; i < 256; i++) 
-		{
-            Ln[i] = 1.0E50; //inf
-        }
-
-        if (t % 1024 == 0) 
-		{
-            printf("Processing %3.2f%%\r", 100. * t / numOutputs);
-        }
-
-		for (int i = 0; i < 16 * 16 * 16; ++i)
-		{
-			int cs = i >> 4;
-			int in = i & 15;
-
-			double cv = curV[i];
-			int ns = nxtS[i];
-
-			double Ltst;
-            double normVal = ABS(x[t] - cv);
-            switch (costFunction) 
-			{
-            case 1:
-                Ltst = L[cs] + dt[t % 3] * normVal;
-                break;
-            case 2:
-                Ltst = L[cs] + dt[t % 3] * normVal * normVal;
-                break;
-            case 3:
-                Ltst = L[cs] + dt[t % 3] * normVal * normVal * normVal;
-                break;
-            case 4:
-                Ltst = L[cs] + dt[t % 3] * normVal * normVal * normVal * normVal;
-                break;
-            default:
-                Ltst = L[cs] + dt[t % 3] * pow(normVal, costFunction);
-                break;
-            }
-             
-            if (Ln[ns] >= Ltst)
-			{
-                Ln[ns] = Ltst;
-                St[ns] = (uint8_t)cs;
-                It[ns] = (uint8_t)in;
-            }
-        }
-
-        for (int i = 0; i < 256; i++)
-		{
-            L[i]      = Ln[i];
-            Stt[i][t] = St[i];
-            Itt[i][t] = It[i];
-        }
-    }
+	case 1:
+		minIndex = viterbi_inner<1>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
+		break;
+	case 2:
+		minIndex = viterbi_inner<2>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
+		break;
+	case 3:
+		minIndex = viterbi_inner<3>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
+		break;
+	default:
+		throw std::runtime_error("Unhandled cost function >3");
+		// Could make a non-tempalted version of this
+		// minIndex = viterbi_inner(costFunction, targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
+	}
 	
-	printf("Processing %3.2f%%\n", 100.0);
-
-	int minIndex = 0;
-    for (int i = 0; i < 256; i++)
-	{
-        if (L[minIndex] > L[i])
-		{
-            minIndex = i;
-        }
-    }
-
-    printf("The cost metric in Viterbi is about %3.3f\n", L[minIndex]);
-
     uint8_t* P = new uint8_t[numOutputs];
     uint8_t* I = new uint8_t[numOutputs];
 
@@ -558,12 +572,11 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
         I[t] = Itt[P[t + 1]][t];
     }
 
-
     double* V = new double[numOutputs];
     
     for (int t = 0; t <numOutputs; t++)
 	{
-		V[t] = curV[P[t] << 4 | I[t]];
+		V[t] = effectiveVolumesCube[P[t] << 4 | I[t]];
     }
 
     if (saveInternal)
@@ -579,20 +592,20 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     double mi = 0;    
     for (int i = 0; i < numOutputs / 3; i++)
 	{
-        en += (x[3 * i + 0]) * (x[3 * i + 0]) * dt[0] +
-              (x[3 * i + 1]) * (x[3 * i + 1]) * dt[1] +
-              (x[3 * i + 2]) * (x[3 * i + 2]) * dt[2];
-        er += (x[3 * i + 0]-V[3 * i + 0]) * (x[3 * i + 0]-V[3 * i + 0]) * dt[0] +
-              (x[3 * i + 1]-V[3 * i + 1]) * (x[3 * i + 1]-V[3 * i + 1]) * dt[1] +
-              (x[3 * i + 2]-V[3 * i + 2]) * (x[3 * i + 2]-V[3 * i + 2]) * dt[2];
-        mi += (x[3 * i + 0]) * dt[0] + (x[3 * i + 1]) * dt[1] + (x[3 * i + 2]) * dt[2];
+        en += (targetOutput[3 * i + 0]) * (targetOutput[3 * i + 0]) * dt[0] +
+              (targetOutput[3 * i + 1]) * (targetOutput[3 * i + 1]) * dt[1] +
+              (targetOutput[3 * i + 2]) * (targetOutput[3 * i + 2]) * dt[2];
+        er += (targetOutput[3 * i + 0]-V[3 * i + 0]) * (targetOutput[3 * i + 0]-V[3 * i + 0]) * dt[0] +
+              (targetOutput[3 * i + 1]-V[3 * i + 1]) * (targetOutput[3 * i + 1]-V[3 * i + 1]) * dt[1] +
+              (targetOutput[3 * i + 2]-V[3 * i + 2]) * (targetOutput[3 * i + 2]-V[3 * i + 2]) * dt[2];
+        mi += (targetOutput[3 * i + 0]) * dt[0] + (targetOutput[3 * i + 1]) * dt[1] + (targetOutput[3 * i + 2]) * dt[2];
     }
     
     double  var = en - mi*mi*3/numOutputs;
     printf("SNR is about %3.2f\n", 10 * log10( var / er ));
 
-	delete[] y;
-	delete[] x;
+	delete[] normalisedInputs;
+	delete[] targetOutput;
 	delete[] P;
 	delete[] V;
 
@@ -870,7 +883,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
     printf("Encoding PSG samples at %dHz\n", (int)frequency);
 
 	printf("Loading %s...", filename.c_str());
-	uint32_t samplesLen;
+	int samplesLen;
 	double* samples = loadSamples(filename, frequency, samplesLen);
     if (samples == NULL)
 	{
@@ -902,7 +915,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
 		throw std::invalid_argument("Invalid chip");
 	}
 
-    uint32_t binSize;
+    int binSize;
     uint8_t* binBuffer = viterbi(ratio, amplitude, samples, samplesLen, dt1, dt2, dt3, interpolation, costFunction, saveInternal, binSize, vol);
 
     // RLE encode the buffer. Either as one consecutive RLE encoded
