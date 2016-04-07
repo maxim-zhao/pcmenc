@@ -16,8 +16,9 @@ The features I have added are:
  * Lots of arcade games and esoteric home computers
 * Optimal bank packing
 * Player code for regular Z80 chips, targetting popular sampling rate
-* Some minor speedups
+* Some speedups, possibly MSVC specific
 * A 64-bit build to allow processing longer files (the process consumes huge amounts of RAM)
+* Support for packed 4-bit data, which often wins over RLE anyway
 
 Usage
 -----
@@ -37,7 +38,7 @@ A file will be produced with the suffix `.pcmenc`, e.g. `input.wav.pcmenc`. Bina
 Original readme
 ---------------
 
-Here's the original README, muchsome of which no longer applies:
+Here's the original README, some of which no longer applies:
 
 ``` 
 =================================================================
