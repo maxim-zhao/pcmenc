@@ -69,8 +69,8 @@ enum Chip
 
 enum DataPrecision
 {
-	DataPrecision_Float = 0,
-	DataPrecision_Double = 1
+	DataPrecision_Float = 4,
+	DataPrecision_Double = 8
 };
 
 // Helper class for file IO
@@ -351,36 +351,65 @@ static T interpolate(const T* data, int index, T dt, int numLeft, int numRight)
 	return result;
 }
 
+// Nasty stuff to get a compile-time-optimised cost function implementation 
+// (to avoid branching in the inner loop). Because C++ does not allow partial
+// function template specialisation, we have to redirect via a templated "impl".
+
+// Fallback
+template <typename T, int costFunction>
+struct CostImpl
+{
+	__forceinline
+	static T act(T value)
+	{
+		return pow(fabs(value), costFunction);
+	}
+};
+
+// Partial specialisation for n=1
+template <typename T>
+struct CostImpl<T, 1>
+{
+	__forceinline
+	static T act(T value)
+	{
+		return fabs(value);
+	}
+};
+
+// Partial specialisation for n=2
+template <typename T>
+struct CostImpl<T, 2>
+{
+	__forceinline
+	static T act(T value)
+	{
+		return value * value;
+	}
+};
+
+// Partial specialisation for n=3
+template <typename T>
+struct CostImpl<T, 3>
+{
+	static T act(T value)
+	{
+		return fabs(value * value * value);
+	}
+};
+
+// Don't bother for higher orders...
+
+// This templated function then calls into the relevant specialised impl
 template <typename T, int costFunction>
 __forceinline
 T Cost(T value)
 {
-	return pow(fabs(value), costFunction);
-}
-
-template <typename T>
-__forceinline
-T Cost<1>(T value)
-{
-	return fabs(value);
-}
-
-template <typename T>
-__forceinline
-T Cost<2>(T value)
-{
-	return value * value;
-}
-
-template <typename T>
-__forceinline
-T Cost<3>(T value)
-{
-	return fabs(value * value * value);
+	return CostImpl<T, costFunction>::act(value);
 }
 
 template <typename T, int costFunction>
-//__forceinline
+__forceinline
 int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint8_t* Stt[256], uint8_t* Itt[256], T* dt)
 {
 	// Costs of previous sample
@@ -413,7 +442,7 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
 			int ns = i & 0xff; // Channels 1-2?
 
 			T normVal = sample - effectiveVolume;
-			T cost = lastCosts[cs] + dt[channel] * Cost<costFunction>(normVal);
+			T cost = lastCosts[cs] + dt[channel] * Cost<T ,costFunction>(normVal);
 
 			if (cost < sampleCosts[ns])
 			{
@@ -490,6 +519,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     printf("   dt1 = %d  (Normalized: %1.3f)\n", (int)idt1, dt[0]);
     printf("   dt2 = %d  (Normalized: %1.3f)\n", (int)idt2, dt[1]);
     printf("   dt3 = %d  (Normalized: %1.3f)\n", (int)idt3, dt[2]);
+	printf("   Using %llu bytes data precision\n", sizeof(T));;
 
     int numOutputs = (length + samplesPerTriplet - 1) / samplesPerTriplet * 3;
 	T* targetOutput = new T[numOutputs];
@@ -558,13 +588,13 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 	switch (costFunction)
 	{
 	case 1:
-		minIndex = viterbi_inner<1>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
+		minIndex = viterbi_inner<T, 1>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
 		break;
 	case 2:
-		minIndex = viterbi_inner<2>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
+		minIndex = viterbi_inner<T, 2>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
 		break;
 	case 3:
-		minIndex = viterbi_inner<3>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
+		minIndex = viterbi_inner<T, 3>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
 		break;
 	default:
 		throw std::runtime_error("Unhandled cost function >3");
@@ -1159,8 +1189,8 @@ int main(int argc, char** argv)
 				"                        2 = Lagrange interpolation (default)\n"
 				"\n"
 				"    -precision <n>  Main search data precision:\n"
-				"                        0 = single precision (default)\n"
-				"                        1 = double precision\n"
+				"                        4 = single precision (default)\n"
+				"                        8 = double precision\n"
 				"\n"
 				"    -chip <chip>    Chip type:\n"
 				"                        0 = AY-3-8910/YM2149F (MSX sound chip)\n"
