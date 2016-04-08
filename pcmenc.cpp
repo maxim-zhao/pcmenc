@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <sstream>
 #include <map>
+#include <ctime>
 
 #include "st.h"
 
@@ -66,26 +67,11 @@ enum Chip
 	Chip_SN76489 = 1
 };
 
-/* Lagrange's classical polynomial interpolation */
-static double interpolate(const double* data, int index, double dt, int numLeft, int numRight)
+enum DataPrecision
 {
-    double result = 0.0;
-    double t = (double) index + dt;
-
-	for (int j = index - numLeft; j <= index + numRight; ++j)
-	{
-		double p = data[(j < 0) ? 0 : j];
-		for (int k = index - numLeft; k <= index + numRight; ++k)
-		{
-			if (k != j)
-			{
-				p *= (t - k) / (j - k);
-			}
-		}
-		result += p;
-	}    
-	return result;
-}
+	DataPrecision_Float = 0,
+	DataPrecision_Double = 1
+};
 
 // Helper class for file IO
 class FileReader
@@ -343,50 +329,72 @@ void dump(const std::string filename, const uint8_t* pData, int byteCount)
 	f.close();
 }
 
-template <int costFunction>
-__forceinline
-double Cost(double value)
+/* Lagrange's classical polynomial interpolation */
+template <typename T>
+static T interpolate(const T* data, int index, T dt, int numLeft, int numRight)
 {
-	return pow(ABS(value), costFunction);
+	T result = 0.0;
+	T t = (T)index + dt;
+
+	for (int j = index - numLeft; j <= index + numRight; ++j)
+	{
+		T p = data[(j < 0) ? 0 : j];
+		for (int k = index - numLeft; k <= index + numRight; ++k)
+		{
+			if (k != j)
+			{
+				p *= (t - k) / (j - k);
+			}
+		}
+		result += p;
+	}
+	return result;
 }
 
-template <>
+template <typename T, int costFunction>
 __forceinline
-double Cost<1>(double value)
+T Cost(T value)
 {
-	return ABS(value);
+	return pow(fabs(value), costFunction);
 }
 
-template <>
+template <typename T>
 __forceinline
-double Cost<2>(double value)
+T Cost<1>(T value)
+{
+	return fabs(value);
+}
+
+template <typename T>
+__forceinline
+T Cost<2>(T value)
 {
 	return value * value;
 }
 
-template <>
+template <typename T>
 __forceinline
-double Cost<3>(double value)
+T Cost<3>(T value)
 {
-	return ABS(value * value * value);
+	return fabs(value * value * value);
 }
 
-template <int costFunction>
+template <typename T, int costFunction>
 //__forceinline
-int viterbi_inner(double* targetOutput, int numOutputs, double* effectiveVolumesCube, uint8_t* Stt[256], uint8_t* Itt[256], double* dt)
+int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint8_t* Stt[256], uint8_t* Itt[256], T* dt)
 {
 	// Costs of previous sample
-	double lastCosts[256];
-	std::fill_n(lastCosts, 256, 0.0);
+	T lastCosts[256];
+	std::fill_n(lastCosts, 256, (T)0);
 	// Starting point for min-cost search for each target
-	double maxCosts[256];
-	std::fill_n(maxCosts, 256, 1.0e50); // inf
+	T maxCosts[256];
+	std::fill_n(maxCosts, 256, std::numeric_limits<T>::max()); // inf
 	int St[256];
 	int It[256];
 
 	for (int t = 0; t < numOutputs; t++)
 	{
-		double sampleCosts[256];
+		T sampleCosts[256];
 		std::copy(maxCosts, maxCosts + 256, sampleCosts);
 
 		if (t % 4096 == 0)
@@ -394,18 +402,18 @@ int viterbi_inner(double* targetOutput, int numOutputs, double* effectiveVolumes
 			printf("Processing %3.2f%%\r", 100.0 * t / numOutputs);
 		}
 
-		double sample = targetOutput[t];
+		T sample = targetOutput[t];
 		int channel = t % 3;
 
 		for (int i = 0; i < 16 * 16 * 16; ++i)
 		{
-			double effectiveVolume = effectiveVolumesCube[i];
+			T effectiveVolume = effectiveVolumesCube[i];
 
 			int cs = i >> 4; // Channels 0-1?
 			int ns = i & 0xff; // Channels 1-2?
 
-			double normVal = sample - effectiveVolume;
-			double cost = lastCosts[cs] + dt[channel] * Cost<costFunction>(normVal);
+			T normVal = sample - effectiveVolume;
+			T cost = lastCosts[cs] + dt[channel] * Cost<costFunction>(normVal);
 
 			if (cost < sampleCosts[ns])
 			{
@@ -444,30 +452,33 @@ int viterbi_inner(double* targetOutput, int numOutputs, double* effectiveVolumes
 // Encodes sample data to be played on the PSG.
 // The output buffer needs to be three times the size of the input buffer
 //
+template <typename T>
 uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples, int length, 
                int idt1, int idt2, int idt3,
                InterpolationType interpolation, int costFunction,
                bool saveInternal, int& binSize, const double vol[16])
 {
+	clock_t start = clock();
+
 	// We normalise the inputs to the range 0..1, 
 	// plus add some padding on the end to avoid needing range checks at that end
-    double* normalisedInputs = new double[length + 256];
+	T* normalisedInputs = new T[length + 256];
 
 	auto minmax = std::minmax_element(samples, samples + length);
-	double inputMin = *minmax.first;
-	double inputMax = *minmax.second;
+	auto inputMin = *minmax.first;
+	auto inputMax = *minmax.second;
 
     for (int i = 0; i < length; i++) // vectorised
 	{
-        normalisedInputs[i] = amplitude * (samples[i] - inputMin) / (inputMax - inputMin);
+        normalisedInputs[i] = (T)(amplitude * (samples[i] - inputMin) / (inputMax - inputMin));
     }
 	std::fill_n(normalisedInputs + length, 256, normalisedInputs[length - 1]);
 
-    double dt[3];
+	T dt[3];
 	uint32_t cyclesPerTriplet = idt1 + idt2 + idt3;
-    dt[0] = (double)idt1 / cyclesPerTriplet;
-    dt[1] = (double)idt2 / cyclesPerTriplet;
-    dt[2] = (double)idt3 / cyclesPerTriplet;
+    dt[0] = (T)idt1 / cyclesPerTriplet;
+    dt[1] = (T)idt2 / cyclesPerTriplet;
+    dt[2] = (T)idt3 / cyclesPerTriplet;
 
     if (samplesPerTriplet < 1)
 	{
@@ -481,7 +492,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     printf("   dt3 = %d  (Normalized: %1.3f)\n", (int)idt3, dt[2]);
 
     int numOutputs = (length + samplesPerTriplet - 1) / samplesPerTriplet * 3;
-    double* targetOutput = new double[numOutputs];
+	T* targetOutput = new T[numOutputs];
 
 	int numLeft;
 	int numRight;
@@ -510,10 +521,10 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     for (int i = 0; i < numOutputs / 3; i++) // 1200: can't tell if inter-iteration dependencies
 	{
         int     t0 = (samplesPerTriplet * i);
-        double  t1 = (samplesPerTriplet * (i+dt[0]));
-        double  t2 = (samplesPerTriplet * (i+dt[0]+dt[1]));
-        double  dt1 = t1-(int)t1;
-        double  dt2 = t2-(int)t2;
+		T  t1 = (samplesPerTriplet * (i+dt[0]));
+		T  t2 = (samplesPerTriplet * (i+dt[0]+dt[1]));
+		T  dt1 = t1-(int)t1;
+		T  dt2 = t2-(int)t2;
 
         targetOutput[3*i+0] =  normalisedInputs[t0];
         targetOutput[3*i+1] =  interpolate(normalisedInputs,(int)t1,dt1,numLeft,numRight);
@@ -522,14 +533,14 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 
     if (saveInternal) 
 	{
-		dump("targetOutput.bin", (uint8_t*)targetOutput, numOutputs * sizeof(double));
-		dump("y.bin", (uint8_t*)normalisedInputs, (length * 256) * sizeof(double));
+		dump("targetOutput.bin", (uint8_t*)targetOutput, numOutputs * sizeof(T));
+		dump("normalisedInputs.bin", (uint8_t*)normalisedInputs, (length * 256) * sizeof(T));
     }
 
-	double effectiveVolumesCube[16 * 16 * 16];
+	T effectiveVolumesCube[16 * 16 * 16];
 	for (int i = 0; i < 16 * 16 * 16; ++i)
 	{
-		effectiveVolumesCube[i] = vol[(i >> 0) & 0xf] + vol[(i >> 4) & 0xf] + vol[(i >> 8) & 0xf];
+		effectiveVolumesCube[i] = (T)(vol[(i >> 0) & 0xf] + vol[(i >> 4) & 0xf] + vol[(i >> 8) & 0xf]);
 	}
 
     uint8_t* Stt[256];
@@ -572,16 +583,16 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
         I[t] = Itt[P[t + 1]][t];
     }
 
-    double* V = new double[numOutputs];
+	T* V = new T[numOutputs];
     
-    for (int t = 0; t <numOutputs; t++)
+    for (int t = 0; t < numOutputs; ++t)
 	{
 		V[t] = effectiveVolumesCube[P[t] << 4 | I[t]];
     }
 
     if (saveInternal)
 	{
-		dump("v.bin", (uint8_t*)V, numOutputs * sizeof(double));
+		dump("v.bin", (uint8_t*)V, numOutputs * sizeof(T));
     }    
 
 
@@ -615,7 +626,16 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 		delete[] Itt[i];
 	}
 
-    binSize = numOutputs;
+	clock_t end = clock();
+	double secondsElapsed = (1.0 * end - start) / CLOCKS_PER_SEC;
+	printf(
+		"Converted %d samples to %d outputs in %.2fs = %.0f samples per second\n",
+		length,
+		numOutputs,
+		secondsElapsed,
+		length / secondsElapsed);
+	
+	binSize = numOutputs;
     return I;
 }
 
@@ -676,55 +696,96 @@ void saveEncodedBuffer(const std::string& filename, const uint8_t* buffer, int l
 	printf("done\n");
 }
 
-uint8_t* chVolPack(int type, uint8_t* binBuffer, uint32_t length, uint32_t romSplit, int* destLength)
+// Packs data from binBuffer to to destP using the specified packing type
+// Consumes only whole triplets
+// Consumes at most tripletCount triplets
+// Packs <= maxBytes bytes
+// Returns the number of bytes packed
+int chVolPackChunk(uint8_t*& pDest, uint8_t*& pSource, int maxTripletCount, int maxBytes, PackingType packingType)
 {
-    uint8_t* destBuffer = new uint8_t[2 * length + 500];
-    uint8_t* destP = destBuffer;
+	// We pack only whole numbers of triplets per bank
+	int tripletCount;
+	switch (packingType)
+	{
+	case PackingType_VolByte:
+	case PackingType_ChannelVolByte:
+		tripletCount = std::min(maxTripletCount, (maxBytes - 2) / 3);
+		break;
+	case PackingType_PackedVol:
+		tripletCount = std::min(maxTripletCount, (maxBytes - 2) * 2 / 3);
+		break;
+	default:
+		throw std::invalid_argument("Invalid packing type");
+	}
+
+	// Bug: may be >64KB...
+	*pDest++ = (uint8_t)((tripletCount >> 0) & 0xff);
+	*pDest++ = (uint8_t)((tripletCount >> 8) & 0xff);
+
+	switch (packingType)
+	{
+	case PackingType_VolByte:
+		std::copy(pSource, pSource + tripletCount * 3, pDest);
+		pDest += tripletCount * 3;
+		break;
+	case PackingType_ChannelVolByte:
+		for (int i = 0; i < tripletCount; ++i)
+		{
+			*pDest++ = (uint8_t)(0 << 6) | pSource[3 * i + 0];
+			*pDest++ = (uint8_t)(1 << 6) | pSource[3 * i + 1];
+			*pDest++ = (uint8_t)(2 << 6) | pSource[3 * i + 2];
+		}
+		break;
+	case PackingType_PackedVol:
+		for (int i = 0; i < tripletCount; ++i)
+		{
+			if (i & 1)
+			{
+				*pDest |= pSource[3 * i + 0];
+				*pDest++ = (uint8_t)(pSource[3 * i + 1] << 4 | pSource[3 * i + 2] << 4);
+			}
+			else
+			{
+				*pDest++ = (uint8_t)(pSource[3 * i + 0] << 4 | pSource[3 * i + 1]);
+				*pDest++ = pSource[3 * i + 2] << 4;
+			}
+		}
+		break;
+	default:
+		throw std::invalid_argument("Invalid packing type");
+	}
+
+	return tripletCount * 3 + 2;
+}
+
+uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, int sourceLength, int romSplit, int* destLength)
+{
+    uint8_t* result = new uint8_t[2 * sourceLength + 500];
+    uint8_t* pDest = result;
     if (romSplit == 0)
 	{
-        *destP++ = (uint8_t)((length >> 0) & 0xff);
-        *destP++ = (uint8_t)((length >> 8) & 0xff);
-        for (uint32_t i = 0; i < length; i++) 
-		{
-            if (type == 0) 
-			{
-                *destP++ = binBuffer[i];
-            }
-            else 
-			{
-                *destP++ = (uint8_t)((i % 3) << 6) | binBuffer[i];
-            }
-        }
+		chVolPackChunk(pDest, pSource, sourceLength / 3, std::numeric_limits<int>::max(), packingType);
     }
     else 
 	{
-        int channel = 0;
-        do 
+        while (sourceLength > 0)
 		{
-            uint32_t subLength = std::min(length, romSplit - 2);
-            *destP++ = (uint8_t)((subLength >> 0) & 0xff);
-            *destP++ = (uint8_t)((subLength >> 8) & 0xff);
-            for (uint32_t i = 0; i < subLength; i++) 
+			// Pack a bank
+			int bytesPacked = chVolPackChunk(pDest, pSource, sourceLength / 3, romSplit, packingType);
+			sourceLength -= bytesPacked;
+			if (sourceLength > 0)
 			{
-                if (type == 0) 
+				// Add padding if needed, but not on the last chunk
+				int padding = romSplit - bytesPacked;
+				for (int i = 0; i < padding; ++i)
 				{
-                    *destP++ = (uint8_t)(channel << 6) | *binBuffer++;
-                    channel = (channel + 1) % 3;
-                }
-                else {
-                    *destP++ = *binBuffer++;
-                }
-            }
-            length -= subLength;
-        } while (length > 0);
-        
-        while ((destP - destBuffer) & 0x1fff) 
-		{
-            *destP++ = 0;
-        }
+					*pDest++ = 0;
+				}
+			}
+        };
     }
-    *destLength = (uint32_t)(destP - destBuffer);
-    return destBuffer;
+    *destLength = (uint32_t)(pDest - result);
+    return result;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -867,7 +928,7 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncre
 //
 void convertWav(const std::string& filename, bool saveInternal, int costFunction, InterpolationType interpolation,
                int cpuFrequency, int dt1, int dt2, int dt3,
-               int ratio, double amplitude, int romSplit, PackingType packingType, Chip chip)
+               int ratio, double amplitude, int romSplit, PackingType packingType, Chip chip, DataPrecision precision)
 {
     // Load samples from wav file
     if (ratio < 1) 
@@ -916,7 +977,18 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
 	}
 
     int binSize;
-    uint8_t* binBuffer = viterbi(ratio, amplitude, samples, samplesLen, dt1, dt2, dt3, interpolation, costFunction, saveInternal, binSize, vol);
+	uint8_t* binBuffer;
+	switch (precision)
+	{
+	case DataPrecision_Float:
+		binBuffer = viterbi<float>(ratio, amplitude, samples, samplesLen, dt1, dt2, dt3, interpolation, costFunction, saveInternal, binSize, vol);
+		break;
+	case DataPrecision_Double:
+		binBuffer = viterbi<double>(ratio, amplitude, samples, samplesLen, dt1, dt2, dt3, interpolation, costFunction, saveInternal, binSize, vol);
+		break;
+	default:
+		throw std::invalid_argument("Invalid data precision");
+	}
 
     // RLE encode the buffer. Either as one consecutive RLE encoded
     // buffer, or as 8kB small buffers, each RLE encoded with header.
@@ -932,12 +1004,10 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
         destBuffer = rlePack(binBuffer, binSize, romSplit, 2, destLength);
         break;
 	case PackingType_VolByte:
-        destBuffer = chVolPack(0, binBuffer, binSize, romSplit, &destLength);
-        break;
 	case PackingType_ChannelVolByte:
-        destBuffer = chVolPack(1, binBuffer, binSize, romSplit, &destLength);
-        break;
 	case PackingType_PackedVol:
+		destBuffer = chVolPack(packingType, binBuffer, binSize, romSplit, &destLength);
+        break;
 	default:
 		throw std::invalid_argument("Invalid packing type");
     }
@@ -1036,12 +1106,13 @@ int main(int argc, char** argv)
 		int dt2 = args.getInt("dt2", 0);
 		int dt3 = args.getInt("dt3", 0);
 		Chip chip = (Chip)args.getInt("chip", Chip_SN76489);
+		DataPrecision precision = (DataPrecision)args.getInt("precision", DataPrecision_Double);
 
 		if (filename.empty())
 		{
 			printf(
 				"Usage:\n"
-				"pcmenc.exe [-r] [-e <encoding>] [-cpuf <freq>] [-p <packing>]\n"
+				"pcmenc.exe [-r <n>] [-p <packing>] [-cpuf <freq>] \n"
 				"           [-dt1 <tstates>] [-dt2 <tstates>] [-dt3 <tstates>]\n"
 				"           [-a <amplitude>] [-rto <ratio>] <wavfile>\n"
 				"\n"
@@ -1052,6 +1123,7 @@ int main(int argc, char** argv)
 				"                        1 = 3 bit RLE; as before but b5 =0\n"
 				"                        2 = 1 byte vol\n"
 				"                        3 = 1 byte {ch, vol} pairs\n"
+				"                        4 = big-endian packed {vol, vol} pairs\n"
 				"\n"
 				"    -cpuf <freq>    CPU frequency of the CPU (Hz)\n"
 				"                        Default: 3579545\n"
@@ -1065,7 +1137,7 @@ int main(int argc, char** argv)
 				"                    on the replayer and how many samples it will play\n"
 				"                    in each PSG triplet update.\n"
 				"\n"
-				"    -a <amplitude>  Input amplitude before encoding.\n"
+				"    -a <amplitude>  Overdrive amplitude adjustment\n"
 				"                        Default 115\n"
 				"\n"
 				"    -rto <ratio>   Number of input samples per PSG triplet\n"
@@ -1086,6 +1158,10 @@ int main(int argc, char** argv)
 				"                        1 = Quadratic interpolation\n"
 				"                        2 = Lagrange interpolation (default)\n"
 				"\n"
+				"    -precision <n>  Main search data precision:\n"
+				"                        0 = single precision (default)\n"
+				"                        1 = double precision\n"
+				"\n"
 				"    -chip <chip>    Chip type:\n"
 				"                        0 = AY-3-8910/YM2149F (MSX sound chip)\n"
 				"                        1 = SN76489/SN76496/NCR8496 (SMS sound chip) (default)\n"
@@ -1096,7 +1172,7 @@ int main(int argc, char** argv)
 			return 0;
 		}
 
-		convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, ratio, (double)amplitude / 100, romSplit, packingType, chip);
+		convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, ratio, (double)amplitude / 100, romSplit, packingType, chip, precision);
 		return 1;
 	}
 	catch (std::exception& e)
