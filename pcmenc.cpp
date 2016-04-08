@@ -1106,7 +1106,7 @@ int main(int argc, char** argv)
 		int dt2 = args.getInt("dt2", 0);
 		int dt3 = args.getInt("dt3", 0);
 		Chip chip = (Chip)args.getInt("chip", Chip_SN76489);
-		DataPrecision precision = (DataPrecision)args.getInt("precision", DataPrecision_Double);
+		DataPrecision precision = (DataPrecision)args.getInt("precision", DataPrecision_Float);
 
 		if (filename.empty())
 		{
