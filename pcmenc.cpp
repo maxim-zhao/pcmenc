@@ -154,13 +154,13 @@ public:
 double* resample(double* in, int inLen, int inRate, int outRate, int& outLen)
 {
 	// Configure the resampler
-    st_effect_t effect = 
+	st_effect_t effect =
 	{
-         "resample", 
-		 ST_EFF_RATE,
-         st_resample_getopts, st_resample_start, st_resample_flow,
-         st_resample_drain, st_resample_stop
-    };
+		"resample",
+		ST_EFF_RATE,
+		st_resample_getopts, st_resample_start, st_resample_flow,
+		st_resample_drain, st_resample_stop
+	};
 	st_effect eff;
 	eff.h = &effect;
 	st_signalinfo_t iinfo = { (st_rate_t)inRate, 4, 0, 1, needSwap() };
@@ -168,57 +168,57 @@ double* resample(double* in, int inLen, int inRate, int outRate, int& outLen)
 	st_updateeffect(&eff, &iinfo, &oinfo, 0);
 
 	// Convert to required format
-	st_sample_t* ibuf = new st_sample_t[inLen];	
+	st_sample_t* ibuf = new st_sample_t[inLen];
 	for (int i = 0; i < inLen; ++i)
 	{
-        ibuf[i] = ST_FLOAT_DDWORD_TO_SAMPLE(in[i]);
-    }
-    char* argv[] = {"-ql"};
-    st_resample_getopts(&eff, 1, argv);
-    st_resample_start(&eff);
+		ibuf[i] = ST_FLOAT_DDWORD_TO_SAMPLE(in[i]);
+	}
+	char* argv[] = { "-ql" };
+	st_resample_getopts(&eff, 1, argv);
+	st_resample_start(&eff);
 
 	// Allocate output buffer
 	uint32_t outBufLen = (uint32_t)((double)inLen * outRate / inRate) + 500;
 	st_sample_t* obuf = new st_sample_t[outBufLen];
-	
+
 	// Pass samples into resampler
 	st_size_t iLen = 0;
 	st_size_t oLen = 0;
-	for(;;)
+	for (;;)
 	{
-        st_size_t idone = ST_BUFSIZ;
-        st_size_t odone = ST_BUFSIZ;
-        int rv = st_resample_flow(&eff, ibuf + iLen, obuf + oLen, &idone, &odone);
-        iLen += idone;
-        oLen += odone; 
-        if (rv == ST_EOF || iLen + idone > (st_size_t)inLen) 
+		st_size_t idone = ST_BUFSIZ;
+		st_size_t odone = ST_BUFSIZ;
+		int rv = st_resample_flow(&eff, ibuf + iLen, obuf + oLen, &idone, &odone);
+		iLen += idone;
+		oLen += odone;
+		if (rv == ST_EOF || iLen + idone > (st_size_t)inLen)
 		{
-            break;
-        }
-    }
+			break;
+		}
+	}
 	delete[] ibuf;
 
 	// Flush resampler
-    st_size_t odone = ST_BUFSIZ;
-    st_resample_drain(&eff, obuf + oLen, &odone);
-    oLen += odone; 
+	st_size_t odone = ST_BUFSIZ;
+	st_resample_drain(&eff, obuf + oLen, &odone);
+	oLen += odone;
 
-    st_resample_stop(&eff);
+	st_resample_stop(&eff);
 
 	// Convert back to double format
-    double* outBuf = NULL;
-    if (oLen > 0) 
+	double* outBuf = NULL;
+	if (oLen > 0)
 	{
-        outBuf = new double[oLen];
-        for (uint32_t i = 0; i < oLen; ++i)
+		outBuf = new double[oLen];
+		for (uint32_t i = 0; i < oLen; ++i)
 		{
-            outBuf[i] = ST_SAMPLE_TO_FLOAT_DDWORD(obuf[i]);
-        }
-        outLen = (uint32_t)oLen;
-    }
-    delete[] obuf;
-    
-    return outBuf;
+			outBuf[i] = ST_SAMPLE_TO_FLOAT_DDWORD(obuf[i]);
+		}
+		outLen = (uint32_t)oLen;
+	}
+	delete[] obuf;
+
+	return outBuf;
 }
 
 
@@ -240,28 +240,28 @@ double* loadSamples(const std::string& filename, int wantedFrequency, int& count
 	f.checkMarker("WAVE").checkMarker("fmt ");
 
 	uint32_t chunkSize = f.read32();
-    
-    uint16_t formatType = f.read16();
+
+	uint16_t formatType = f.read16();
 	if (formatType != 0 && formatType != 1)
 	{
 		throw std::runtime_error("Unsuported format type");
 	}
 
-    uint16_t channels = f.read16();
+	uint16_t channels = f.read16();
 	if (channels != 1 && channels != 2)
 	{
 		throw std::runtime_error("Unsuported channel count");
 	}
 
-    uint32_t samplesPerSec = f.read32();
+	uint32_t samplesPerSec = f.read32();
 
 	f.seek(6); // discard avgBytesPerSec (4), blockAlign (2)
 
 	uint16_t bitsPerSample = f.read16();
-    if (bitsPerSample & 0x07)
+	if (bitsPerSample & 0x07)
 	{
 		throw std::runtime_error("Only supports 8, 16, 24, and 32 bits per sample");
-    }
+	}
 
 	// Seek to the next chunk
 	f.seek(chunkSize - 16);
@@ -273,51 +273,51 @@ double* loadSamples(const std::string& filename, int wantedFrequency, int& count
 		f.seek(chunkSize);
 	}
 
-    uint32_t dataSize = f.read32();
-    uint32_t bytesPerSample = ((bitsPerSample + 7) / 8);
-    uint32_t sampleNum = dataSize / bytesPerSample / channels;
+	uint32_t dataSize = f.read32();
+	uint32_t bytesPerSample = ((bitsPerSample + 7) / 8);
+	uint32_t sampleNum = dataSize / bytesPerSample / channels;
 
-    double* tempSamples = new double[sampleNum];
+	double* tempSamples = new double[sampleNum];
 
-    for (uint32_t i = 0; i < sampleNum; ++i)
+	for (uint32_t i = 0; i < sampleNum; ++i)
 	{
-        double value = 0;
-        for (int c = 0; c < channels; ++c)
+		double value = 0;
+		for (int c = 0; c < channels; ++c)
 		{
-            if (bytesPerSample == 1) 
+			if (bytesPerSample == 1)
 			{
-                uint8_t val = f.read();
-                value += ((int)val - 0x80) / 128.0 / channels;
-            }
-            else {
-                uint32_t val = 0;
-                for (uint32_t j = 0; j < bytesPerSample; j++) 
+				uint8_t val = f.read();
+				value += ((int)val - 0x80) / 128.0 / channels;
+			}
+			else {
+				uint32_t val = 0;
+				for (uint32_t j = 0; j < bytesPerSample; j++)
 				{
-                    uint8_t tmp = f.read();
-                    val = (val >> 8) | (tmp << 24);
-                }
-                value += (int)val / 2147483649.0 / channels;
-            }
-        }
-        tempSamples[i] = value;
-    }
+					uint8_t tmp = f.read();
+					val = (val >> 8) | (tmp << 24);
+				}
+				value += (int)val / 2147483649.0 / channels;
+			}
+		}
+		tempSamples[i] = value;
+	}
 
-    double* retSamples;
-    if (ABS(1.0 * wantedFrequency / samplesPerSec - 1) < MIN_ALLOWED_FREQ_DIFF) 
+	double* retSamples;
+	if (ABS(1.0 * wantedFrequency / samplesPerSec - 1) < MIN_ALLOWED_FREQ_DIFF)
 	{
-        retSamples = new double[sampleNum];
-        memcpy(retSamples, tempSamples, sampleNum * sizeof(double));
-        count = sampleNum;
-    }
-    else 
+		retSamples = new double[sampleNum];
+		memcpy(retSamples, tempSamples, sampleNum * sizeof(double));
+		count = sampleNum;
+	}
+	else
 	{
-        printf("Resampling input wave from %dHz to %dHz\n", (int)samplesPerSec, (int)wantedFrequency);
-        retSamples = resample(tempSamples, sampleNum, samplesPerSec, wantedFrequency, count);
-    }
+		printf("Resampling input wave from %dHz to %dHz\n", (int)samplesPerSec, (int)wantedFrequency);
+		retSamples = resample(tempSamples, sampleNum, samplesPerSec, wantedFrequency, count);
+	}
 
-    delete[] tempSamples;
+	delete[] tempSamples;
 
-    return retSamples;
+	return retSamples;
 }
 
 void dump(const std::string filename, const uint8_t* pData, int byteCount)
@@ -360,7 +360,7 @@ template <typename T, int costFunction>
 struct CostImpl
 {
 	__forceinline
-	static T act(T value)
+		static T act(T value)
 	{
 		return pow(fabs(value), costFunction);
 	}
@@ -371,7 +371,7 @@ template <typename T>
 struct CostImpl<T, 1>
 {
 	__forceinline
-	static T act(T value)
+		static T act(T value)
 	{
 		return fabs(value);
 	}
@@ -382,7 +382,7 @@ template <typename T>
 struct CostImpl<T, 2>
 {
 	__forceinline
-	static T act(T value)
+		static T act(T value)
 	{
 		return value * value;
 	}
@@ -410,19 +410,23 @@ T Cost(T value)
 
 template <typename T, int costFunction>
 __forceinline
-int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint8_t* Stt[256], uint8_t* Itt[256], T* dt)
+int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint8_t* precedingValues[256], uint8_t* updateValues[256], T* dt)
 {
 	// Costs of previous sample
 	T lastCosts[256];
 	std::fill_n(lastCosts, 256, (T)0);
 	// Starting point for min-cost search for each target
 	T maxCosts[256];
-	std::fill_n(maxCosts, 256, std::numeric_limits<T>::max()); // inf
-	int St[256];
-	int It[256];
+	std::fill_n(maxCosts, 256, std::numeric_limits<T>::max());
+	int samplePreceding[256];
+	int sampleUpdate[256];
 
 	for (int t = 0; t < numOutputs; t++)
 	{
+		T sample = targetOutput[t];
+		int channel = t % 3;
+
+		// For each preceding two 4-bit values, we calculate the minimum cost for this sample
 		T sampleCosts[256];
 		std::copy(maxCosts, maxCosts + 256, sampleCosts);
 
@@ -431,45 +435,46 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
 			printf("Processing %3.2f%%\r", 100.0 * t / numOutputs);
 		}
 
-		T sample = targetOutput[t];
-		int channel = t % 3;
-
 		for (int i = 0; i < 16 * 16 * 16; ++i)
 		{
 			T effectiveVolume = effectiveVolumesCube[i];
 
-			int cs = i >> 4; // Channels 0-1?
-			int ns = i & 0xff; // Channels 1-2?
+			// We can imagine the index i as actually three channel indexes xyz on the cube
+			// We are going to judge the quality of z assuming the other two channels are x and y
+			int xy = i >> 4;
 
+			// This is the delta between what we might achieve and what we want
 			T normVal = sample - effectiveVolume;
-			T cost = lastCosts[cs] + dt[channel] * Cost<T ,costFunction>(normVal);
+			// This is our judgement of how bad that is, plus the cost
+			// of the previous sample (assuming it lead to xy)
+			T cost = lastCosts[xy] + dt[channel] * Cost<T, costFunction>(normVal);
 
-			if (cost < sampleCosts[ns])
+			// We select the minimum costs for each yz
+			int yz = i & 0xff;
+			if (cost < sampleCosts[yz])
 			{
-				sampleCosts[ns] = cost;
-				St[ns] = cs;
-				It[ns] = i & 15; // Channel 2?
+				sampleCosts[yz] = cost;
+				// And we store the xy and z that go with it
+				samplePreceding[yz] = xy;
+				sampleUpdate[yz] = i & 0x0f;
 			}
 		}
 
+		// Then we copy the yz costs as the xy for the next sample
 		std::copy(sampleCosts, sampleCosts + 256, lastCosts);
+
+		// And record the other stuff that went with it
 		for (int i = 0; i < 256; i++)
 		{
-			Stt[i][t] = (uint8_t)St[i];
-			Itt[i][t] = (uint8_t)It[i];
+			precedingValues[i][t] = (uint8_t)samplePreceding[i];
+			updateValues[i][t] = (uint8_t)sampleUpdate[i];
 		}
 	}
 
 	printf("Processing %3.2f%%\n", 100.0);
 
-	int minIndex = 0;
-	for (int i = 0; i < 256; i++)
-	{
-		if (lastCosts[minIndex] > lastCosts[i])
-		{
-			minIndex = i;
-		}
-	}
+	// We select the smallest total cost
+	int minIndex = std::distance(lastCosts, std::min_element(lastCosts, lastCosts + 256));
 
 	printf("The cost metric in Viterbi is about %3.3f\n", lastCosts[minIndex]);
 
@@ -482,10 +487,10 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
 // The output buffer needs to be three times the size of the input buffer
 //
 template <typename T>
-uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples, int length, 
-               int idt1, int idt2, int idt3,
-               InterpolationType interpolation, int costFunction,
-               bool saveInternal, int& binSize, const double vol[16])
+uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples, int length,
+	int idt1, int idt2, int idt3,
+	InterpolationType interpolation, int costFunction,
+	bool saveInternal, int& binSize, const double vol[16])
 {
 	clock_t start = clock();
 
@@ -497,164 +502,177 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 	auto inputMin = *minmax.first;
 	auto inputMax = *minmax.second;
 
-    for (int i = 0; i < length; i++) // vectorised
+	for (int i = 0; i < length; i++)
 	{
-        normalisedInputs[i] = (T)(amplitude * (samples[i] - inputMin) / (inputMax - inputMin));
-    }
+		normalisedInputs[i] = (T)(amplitude * (samples[i] - inputMin) / (inputMax - inputMin));
+	}
 	std::fill_n(normalisedInputs + length, 256, normalisedInputs[length - 1]);
 
+	// Normalise the relative cycle times to fractions of a triplet time
 	T dt[3];
 	uint32_t cyclesPerTriplet = idt1 + idt2 + idt3;
-    dt[0] = (T)idt1 / cyclesPerTriplet;
-    dt[1] = (T)idt2 / cyclesPerTriplet;
-    dt[2] = (T)idt3 / cyclesPerTriplet;
+	dt[0] = (T)idt1 / cyclesPerTriplet;
+	dt[1] = (T)idt2 / cyclesPerTriplet;
+	dt[2] = (T)idt3 / cyclesPerTriplet;
 
-    if (samplesPerTriplet < 1)
+	if (samplesPerTriplet < 1)
 	{
-        samplesPerTriplet = 1;
-    }
+		samplesPerTriplet = 1;
+	}
 
-    printf("Viterbi SNR optimization:\n");
-    printf("   %d input samples per PSG triplet output\n", samplesPerTriplet);
-    printf("   dt1 = %d  (Normalized: %1.3f)\n", (int)idt1, dt[0]);
-    printf("   dt2 = %d  (Normalized: %1.3f)\n", (int)idt2, dt[1]);
-    printf("   dt3 = %d  (Normalized: %1.3f)\n", (int)idt3, dt[2]);
+	printf("Viterbi SNR optimization:\n");
+	printf("   %d input samples per PSG triplet output\n", samplesPerTriplet);
+	printf("   dt1 = %d  (Normalized: %1.3f)\n", (int)idt1, dt[0]);
+	printf("   dt2 = %d  (Normalized: %1.3f)\n", (int)idt2, dt[1]);
+	printf("   dt3 = %d  (Normalized: %1.3f)\n", (int)idt3, dt[2]);
 	printf("   Using %llu bytes data precision\n", sizeof(T));;
 
-    int numOutputs = (length + samplesPerTriplet - 1) / samplesPerTriplet * 3;
+	// Generate a modified version of the inputs to account for any
+	// jitter in the output timings, by sampling at the relative offsets
+	int numOutputs = (length + samplesPerTriplet - 1) / samplesPerTriplet * 3;
 	T* targetOutput = new T[numOutputs];
 
 	int numLeft;
 	int numRight;
 
-    switch (interpolation)
+	switch (interpolation)
 	{
-    case Interpolation_Linear:
-        printf("   Resampling using Linear interpolation\n");
-        numLeft=0;
-        numRight=1;
-        break;
-    case Interpolation_Quadratic:
-        printf("   Resampling using Quadratic interpolation\n");
-        numLeft=0;
-        numRight=2;
-        break;
-    case Interpolation_Lagrange11:
-        printf("   Resampling using Lagrange interpolation on 11 points\n");
-        numLeft=5;
-        numRight=5;
-        break;
+	case Interpolation_Linear:
+		printf("   Resampling using Linear interpolation\n");
+		numLeft = 0;
+		numRight = 1;
+		break;
+	case Interpolation_Quadratic:
+		printf("   Resampling using Quadratic interpolation\n");
+		numLeft = 0;
+		numRight = 2;
+		break;
+	case Interpolation_Lagrange11:
+		printf("   Resampling using Lagrange interpolation on 11 points\n");
+		numLeft = 5;
+		numRight = 5;
+		break;
 	default:
 		throw std::invalid_argument("Invalid interpolation type");
 	}
 
-    for (int i = 0; i < numOutputs / 3; i++) // 1200: can't tell if inter-iteration dependencies
+	for (int i = 0; i < numOutputs / 3; i++)
 	{
-        int     t0 = (samplesPerTriplet * i);
-		T  t1 = (samplesPerTriplet * (i+dt[0]));
-		T  t2 = (samplesPerTriplet * (i+dt[0]+dt[1]));
-		T  dt1 = t1-(int)t1;
-		T  dt2 = t2-(int)t2;
+		int t0 = (samplesPerTriplet * i);
+		T t1 = (samplesPerTriplet * (i + dt[0]));
+		T t2 = (samplesPerTriplet * (i + dt[0] + dt[1]));
+		T dt1 = t1 - (int)t1;
+		T dt2 = t2 - (int)t2;
 
-        targetOutput[3*i+0] =  normalisedInputs[t0];
-        targetOutput[3*i+1] =  interpolate(normalisedInputs,(int)t1,dt1,numLeft,numRight);
-        targetOutput[3*i+2] =  interpolate(normalisedInputs,(int)t2,dt2,numLeft,numRight);
-    }
+		targetOutput[3 * i + 0] = normalisedInputs[t0];
+		targetOutput[3 * i + 1] = interpolate(normalisedInputs, (int)t1, dt1, numLeft, numRight);
+		targetOutput[3 * i + 2] = interpolate(normalisedInputs, (int)t2, dt2, numLeft, numRight);
+	}
 
-    if (saveInternal) 
+	if (saveInternal)
 	{
 		dump("targetOutput.bin", (uint8_t*)targetOutput, numOutputs * sizeof(T));
 		dump("normalisedInputs.bin", (uint8_t*)normalisedInputs, (length * 256) * sizeof(T));
-    }
+	}
 
+	// Build the set of effective volumes for all possible channel settings
 	T effectiveVolumesCube[16 * 16 * 16];
 	for (int i = 0; i < 16 * 16 * 16; ++i)
 	{
-		effectiveVolumesCube[i] = (T)(vol[(i >> 0) & 0xf] + vol[(i >> 4) & 0xf] + vol[(i >> 8) & 0xf]);
+		effectiveVolumesCube[i] = (T)(
+			vol[(i >> 0) & 0xf] +
+			vol[(i >> 4) & 0xf] +
+			vol[(i >> 8) & 0xf]);
 	}
 
-    uint8_t* Stt[256];
-    uint8_t* Itt[256];
+	// For each of 256 "preceding values" we hold a value per sample
+	uint8_t* precedingValues[256];
+	// For each of 256 "update values" we hold a value per sample
+	uint8_t* updateValues[256];
 
-    for (int i = 0; i < 256; i++) // Loop contains loop-carried data dependences that prevent vectorization
+	// We allocate a giant buffer and point into it
+	// This is the bulk of the memory used
+	uint8_t* giantBuffer = new uint8_t[2 * 256 * numOutputs];
+	for (int i = 0; i < 256; ++i)
 	{
-        Stt[i] = new uint8_t[numOutputs];
-        Itt[i] = new uint8_t[numOutputs];
-    }
+		uint8_t* p = giantBuffer + numOutputs * i * 2;
+		precedingValues[i] = p;
+		updateValues[i] = p + 256;
+	}
 
-    printf("   Using cost function: L%d\n", costFunction);
+	printf("   Using cost function: L%d\n", costFunction);
 
 	int minIndex;
 	switch (costFunction)
 	{
 	case 1:
-		minIndex = viterbi_inner<T, 1>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
+		minIndex = viterbi_inner<T, 1>(targetOutput, numOutputs, effectiveVolumesCube, precedingValues, updateValues, dt);
 		break;
 	case 2:
-		minIndex = viterbi_inner<T, 2>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
+		minIndex = viterbi_inner<T, 2>(targetOutput, numOutputs, effectiveVolumesCube, precedingValues, updateValues, dt);
 		break;
 	case 3:
-		minIndex = viterbi_inner<T, 3>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
+		minIndex = viterbi_inner<T, 3>(targetOutput, numOutputs, effectiveVolumesCube, precedingValues, updateValues, dt);
 		break;
 	default:
 		throw std::runtime_error("Unhandled cost function >3");
-		// Could make a non-tempalted version of this
-		// minIndex = viterbi_inner(costFunction, targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
+		// Could make a non-templated version of this but I guess it's not needed
+		//minIndex = viterbi_inner<T, costFunction>(targetOutput, numOutputs, effectiveVolumesCube, Stt, Itt, dt);
+		//break;
 	}
-	
-    uint8_t* P = new uint8_t[numOutputs];
-    uint8_t* I = new uint8_t[numOutputs];
 
-    P[numOutputs - 1] = Stt[minIndex][numOutputs - 1];
-    I[numOutputs - 1] = Itt[minIndex][numOutputs - 1];
-    for (int t = numOutputs - 2; t >= 0; t--)
+	// Then we walk the preceding values and update values for the discovered minimum-cost index
+	// backwards to the start
+	uint8_t* precedingValuesPath = new uint8_t[numOutputs];
+	uint8_t* updateValuesPath = new uint8_t[numOutputs];
+
+	precedingValuesPath[numOutputs - 1] = precedingValues[minIndex][numOutputs - 1];
+	updateValuesPath[numOutputs - 1] = updateValues[minIndex][numOutputs - 1];
+	for (int t = numOutputs - 2; t >= 0; --t)
 	{
-        P[t] = Stt[P[t + 1]][t];
-        I[t] = Itt[P[t + 1]][t];
-    }
+		int yz = precedingValuesPath[t + 1];
+		precedingValuesPath[t] = precedingValues[yz][t];
+		updateValuesPath[t] = updateValues[yz][t]; // = z?
+	}
 
-	T* V = new T[numOutputs];
-    
-    for (int t = 0; t < numOutputs; ++t)
+	// Then we build a resultant actual-values series
+	T* achievedOutput = new T[numOutputs];
+
+	for (int t = 0; t < numOutputs; ++t)
 	{
-		V[t] = effectiveVolumesCube[P[t] << 4 | I[t]];
-    }
+		int volumeCubeIndex = precedingValuesPath[t] << 4 | updateValuesPath[t];
+		achievedOutput[t] = effectiveVolumesCube[volumeCubeIndex];
+	}
 
-    if (saveInternal)
+	if (saveInternal)
 	{
-		dump("v.bin", (uint8_t*)V, numOutputs * sizeof(T));
-    }    
+		dump("achievedOutput.bin", (uint8_t*)achievedOutput, numOutputs * sizeof(T));
+	}
 
-
-/* Compute the SNR independently from the cost metric used in Viterbi */
-
-    double en = 0;
-    double er = 0;
-    double mi = 0;    
-    for (int i = 0; i < numOutputs / 3; i++)
+	// Compute the SNR using this (independently of the cost metric used to get it)
+	double en = 0;
+	double er = 0;
+	double mi = 0;
+	for (int i = 0; i < numOutputs / 3; i++)
 	{
-        en += (targetOutput[3 * i + 0]) * (targetOutput[3 * i + 0]) * dt[0] +
-              (targetOutput[3 * i + 1]) * (targetOutput[3 * i + 1]) * dt[1] +
-              (targetOutput[3 * i + 2]) * (targetOutput[3 * i + 2]) * dt[2];
-        er += (targetOutput[3 * i + 0]-V[3 * i + 0]) * (targetOutput[3 * i + 0]-V[3 * i + 0]) * dt[0] +
-              (targetOutput[3 * i + 1]-V[3 * i + 1]) * (targetOutput[3 * i + 1]-V[3 * i + 1]) * dt[1] +
-              (targetOutput[3 * i + 2]-V[3 * i + 2]) * (targetOutput[3 * i + 2]-V[3 * i + 2]) * dt[2];
-        mi += (targetOutput[3 * i + 0]) * dt[0] + (targetOutput[3 * i + 1]) * dt[1] + (targetOutput[3 * i + 2]) * dt[2];
-    }
-    
-    double  var = en - mi*mi*3/numOutputs;
-    printf("SNR is about %3.2f\n", 10 * log10( var / er ));
+		en += (targetOutput[3 * i + 0]) * (targetOutput[3 * i + 0]) * dt[0] +
+			(targetOutput[3 * i + 1]) * (targetOutput[3 * i + 1]) * dt[1] +
+			(targetOutput[3 * i + 2]) * (targetOutput[3 * i + 2]) * dt[2];
+		er += (targetOutput[3 * i + 0] - achievedOutput[3 * i + 0]) * (targetOutput[3 * i + 0] - achievedOutput[3 * i + 0]) * dt[0] +
+			(targetOutput[3 * i + 1] - achievedOutput[3 * i + 1]) * (targetOutput[3 * i + 1] - achievedOutput[3 * i + 1]) * dt[1] +
+			(targetOutput[3 * i + 2] - achievedOutput[3 * i + 2]) * (targetOutput[3 * i + 2] - achievedOutput[3 * i + 2]) * dt[2];
+		mi += (targetOutput[3 * i + 0]) * dt[0] + (targetOutput[3 * i + 1]) * dt[1] + (targetOutput[3 * i + 2]) * dt[2];
+	}
+
+	double  var = en - mi*mi * 3 / numOutputs;
+	printf("SNR is about %3.2f\n", 10 * log10(var / er));
 
 	delete[] normalisedInputs;
 	delete[] targetOutput;
-	delete[] P;
-	delete[] V;
+	delete[] precedingValuesPath;
+	delete[] achievedOutput;
 
-	for (int i = 0; i < 256; i++)
-	{
-		delete[] Stt[i];
-		delete[] Itt[i];
-	}
+	delete giantBuffer;
 
 	clock_t end = clock();
 	double secondsElapsed = (1.0 * end - start) / CLOCKS_PER_SEC;
@@ -664,9 +682,9 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 		numOutputs,
 		secondsElapsed,
 		length / secondsElapsed);
-	
+
 	binSize = numOutputs;
-    return I;
+	return updateValuesPath;
 }
 
 
@@ -677,43 +695,43 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 uint8_t* rleEncode(const uint8_t* pData, int dataLen, int rleIncrement, int& resultLen)
 {
 	// Allocate a worst-case-sized buffer
-    uint8_t* result = new uint8_t[2 * dataLen + 2];
+	uint8_t* result = new uint8_t[2 * dataLen + 2];
 
 	// Start with the triplet count
 	size_t tripletCount = dataLen / 3;
 	result[0] = (tripletCount >> 0) & 0xff;
-    result[1] = (tripletCount >> 8) & 0xff;
+	result[1] = (tripletCount >> 8) & 0xff;
 
-    int currentState[3] = { pData[0], pData[1], pData[2] };
+	int currentState[3] = { pData[0], pData[1], pData[2] };
 	int rleCounts[3] = { 0, 0, 0 };
 	int offsets[3] = { 2, 3, 4 };
 	int nextUnusedOffset = 5;
 
-    for (int i = 3; i < dataLen; i++) 
+	for (int i = 3; i < dataLen; i++)
 	{
-        int channel = i % 3;
+		int channel = i % 3;
 		bool isLastTriplet = i >= dataLen - 3;
 
-        if (currentState[channel] == pData[i] && rleCounts[channel] < 15 - (rleIncrement - 1) && !isLastTriplet)
+		if (currentState[channel] == pData[i] && rleCounts[channel] < 15 - (rleIncrement - 1) && !isLastTriplet)
 		{
-            rleCounts[channel] += rleIncrement;
-        }
-        else 
+			rleCounts[channel] += rleIncrement;
+		}
+		else
 		{
-            result[offsets[channel]] = (uint8_t)(rleCounts[channel] << 4 | currentState[channel]);
-            rleCounts[channel] = 0;
-            offsets[channel] = nextUnusedOffset++;
-            currentState[channel] = pData[i];
-            if (isLastTriplet) 
+			result[offsets[channel]] = (uint8_t)(rleCounts[channel] << 4 | currentState[channel]);
+			rleCounts[channel] = 0;
+			offsets[channel] = nextUnusedOffset++;
+			currentState[channel] = pData[i];
+			if (isLastTriplet)
 			{
-                result[offsets[channel]] = (uint8_t)(rleCounts[channel] << 4 | currentState[channel]);
-            }
-        }
-    }
+				result[offsets[channel]] = (uint8_t)(rleCounts[channel] << 4 | currentState[channel]);
+			}
+		}
+	}
 
-    resultLen = nextUnusedOffset;
+	resultLen = nextUnusedOffset;
 
-    return result;
+	return result;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -790,15 +808,15 @@ int chVolPackChunk(uint8_t*& pDest, uint8_t*& pSource, int maxTripletCount, int 
 
 uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, int sourceLength, int romSplit, int* destLength)
 {
-    uint8_t* result = new uint8_t[2 * sourceLength + 500];
-    uint8_t* pDest = result;
-    if (romSplit == 0)
+	uint8_t* result = new uint8_t[2 * sourceLength + 500];
+	uint8_t* pDest = result;
+	if (romSplit == 0)
 	{
 		chVolPackChunk(pDest, pSource, sourceLength / 3, std::numeric_limits<int>::max(), packingType);
-    }
-    else 
+	}
+	else
 	{
-        while (sourceLength > 0)
+		while (sourceLength > 0)
 		{
 			// Pack a bank
 			int bytesPacked = chVolPackChunk(pDest, pSource, sourceLength / 3, romSplit, packingType);
@@ -812,10 +830,10 @@ uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, int sourceLength, 
 					*pDest++ = 0;
 				}
 			}
-        };
-    }
-    *destLength = (uint32_t)(pDest - result);
-    return result;
+		};
+	}
+	*destLength = (uint32_t)(pDest - result);
+	return result;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -824,10 +842,10 @@ uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, int sourceLength, 
 //
 uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncrement, int& resultLen)
 {
-    if (romSplit == 0)
+	if (romSplit == 0)
 	{
-        printf("RLE encoding with no split\n");
-        auto result = rleEncode(binBuffer, length, rleIncrement, resultLen);
+		printf("RLE encoding with no split\n");
+		auto result = rleEncode(binBuffer, length, rleIncrement, resultLen);
 		printf(
 			"- Encoded %d volume commands (%d bytes) to %d bytes of data,\n"
 			"  effective compression ratio %.2f%%\n",
@@ -836,13 +854,13 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncre
 			resultLen,
 			(1.0 * length / 2 - resultLen) / (length / 2) * 100);
 		return result;
-    }
+	}
 
-    printf("RLE encoding with splits at %dKB boundaries", romSplit / 1024);
-    
-    uint8_t* destBuffer = new uint8_t[2 * length];
+	printf("RLE encoding with splits at %dKB boundaries", romSplit / 1024);
+
+	uint8_t* destBuffer = new uint8_t[2 * length];
 	uint8_t* pDest = destBuffer;
-    resultLen = 0;
+	resultLen = 0;
 
 	int tripletsEncoded = 0;
 	int tripletsRemaining = length / 3;
@@ -957,32 +975,32 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncre
 // consecutive buffer or a buffer split in multiple 8kB buffers
 //
 void convertWav(const std::string& filename, bool saveInternal, int costFunction, InterpolationType interpolation,
-               int cpuFrequency, int dt1, int dt2, int dt3,
-               int ratio, double amplitude, int romSplit, PackingType packingType, Chip chip, DataPrecision precision)
+	int cpuFrequency, int dt1, int dt2, int dt3,
+	int ratio, double amplitude, int romSplit, PackingType packingType, Chip chip, DataPrecision precision)
 {
-    // Load samples from wav file
-    if (ratio < 1) 
+	// Load samples from wav file
+	if (ratio < 1)
 	{
 		throw std::invalid_argument("Invalid number of inputs per output");
-    }
+	}
 	int frequency = cpuFrequency * ratio / (dt1 + dt2 + dt3);
-    if (frequency == 0) 
+	if (frequency == 0)
 	{
 		throw std::invalid_argument("Invalid frequency");
-    }
+	}
 
-    printf("Encoding PSG samples at %dHz\n", (int)frequency);
+	printf("Encoding PSG samples at %dHz\n", (int)frequency);
 
 	printf("Loading %s...", filename.c_str());
 	int samplesLen;
 	double* samples = loadSamples(filename, frequency, samplesLen);
-    if (samples == NULL)
+	if (samples == NULL)
 	{
 		throw std::runtime_error("Failed to load wav file");
-    }
+	}
 	printf("done\n");
-    
-    // Do viterbi encoding
+
+	// Do viterbi encoding
 	double vol[16];
 	switch (chip)
 	{
@@ -1006,7 +1024,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
 		throw std::invalid_argument("Invalid chip");
 	}
 
-    int binSize;
+	int binSize;
 	uint8_t* binBuffer;
 	switch (precision)
 	{
@@ -1020,32 +1038,32 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
 		throw std::invalid_argument("Invalid data precision");
 	}
 
-    // RLE encode the buffer. Either as one consecutive RLE encoded
-    // buffer, or as 8kB small buffers, each RLE encoded with header.
-    uint8_t* destBuffer;
-    int destLength;
+	// RLE encode the buffer. Either as one consecutive RLE encoded
+	// buffer, or as 8kB small buffers, each RLE encoded with header.
+	uint8_t* destBuffer;
+	int destLength;
 
-    switch (packingType) 
+	switch (packingType)
 	{
 	case PackingType_RLE:
-        destBuffer = rlePack(binBuffer, binSize, romSplit, 1, destLength);
-        break;
+		destBuffer = rlePack(binBuffer, binSize, romSplit, 1, destLength);
+		break;
 	case PackingType_RLE3:
-        destBuffer = rlePack(binBuffer, binSize, romSplit, 2, destLength);
-        break;
+		destBuffer = rlePack(binBuffer, binSize, romSplit, 2, destLength);
+		break;
 	case PackingType_VolByte:
 	case PackingType_ChannelVolByte:
 	case PackingType_PackedVol:
 		destBuffer = chVolPack(packingType, binBuffer, binSize, romSplit, &destLength);
-        break;
+		break;
 	default:
 		throw std::invalid_argument("Invalid packing type");
-    }
+	}
 	delete[] binBuffer;
 
-    // Save the encoded buffer
-    saveEncodedBuffer(filename + ".pcmenc", destBuffer, destLength);
-    delete[] destBuffer;
+	// Save the encoded buffer
+	saveEncodedBuffer(filename + ".pcmenc", destBuffer, destLength);
+	delete[] destBuffer;
 }
 
 class Args
