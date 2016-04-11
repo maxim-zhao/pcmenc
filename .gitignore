@@ -90,3 +90,5 @@ Release
 *.vspx
 .vs
 pcmenc.VC.db
+*.sym
+*.sms
