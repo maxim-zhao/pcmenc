@@ -354,13 +354,13 @@ static T interpolate(const T* data, int index, T dt, int numLeft, int numRight)
 // Nasty stuff to get a compile-time-optimised cost function implementation 
 // (to avoid branching in the inner loop). Because C++ does not allow partial
 // function template specialisation, we have to redirect via a templated "impl".
+// These should all inline nicely.
 
 // Fallback
 template <typename T, int costFunction>
 struct CostImpl
 {
-	__forceinline
-		static T act(T value)
+	static T act(T value)
 	{
 		return pow(fabs(value), costFunction);
 	}
@@ -370,8 +370,7 @@ struct CostImpl
 template <typename T>
 struct CostImpl<T, 1>
 {
-	__forceinline
-		static T act(T value)
+	static T act(T value)
 	{
 		return fabs(value);
 	}
@@ -381,8 +380,7 @@ struct CostImpl<T, 1>
 template <typename T>
 struct CostImpl<T, 2>
 {
-	__forceinline
-		static T act(T value)
+	static T act(T value)
 	{
 		return value * value;
 	}
@@ -402,14 +400,12 @@ struct CostImpl<T, 3>
 
 // This templated function then calls into the relevant specialised impl
 template <typename T, int costFunction>
-__forceinline
 T Cost(T value)
 {
 	return CostImpl<T, costFunction>::act(value);
 }
 
 template <typename T, int costFunction>
-__forceinline
 int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint8_t* precedingValues[256], uint8_t* updateValues[256], T* dt)
 {
 	// Costs of previous sample
@@ -590,14 +586,11 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 	// For each of 256 "update values" we hold a value per sample
 	uint8_t* updateValues[256];
 
-	// We allocate a giant buffer and point into it
-	// This is the bulk of the memory used
-	uint8_t* giantBuffer = new uint8_t[2 * 256 * numOutputs];
+	// This is the bulk of the memory used: 512 bytes per sample
 	for (int i = 0; i < 256; ++i)
 	{
-		uint8_t* p = giantBuffer + numOutputs * i * 2;
-		precedingValues[i] = p;
-		updateValues[i] = p + numOutputs;
+		precedingValues[i] = new uint8_t[numOutputs];
+		updateValues[i] = new uint8_t[numOutputs];
 	}
 
 	printf("   Using cost function: L%d\n", costFunction);
@@ -623,19 +616,26 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 
 	// Then we walk the preceding values and update values for the discovered minimum-cost index
 	// backwards to the start
-	uint8_t* precedingValuesPath = new uint8_t[numOutputs];
-	uint8_t* updateValuesPath = new uint8_t[numOutputs];
+	uint8_t* precedingValuesPath = new uint8_t[numOutputs]; // This is only for the benefit of some analysis below
+	uint8_t* updateValuesPath = new uint8_t[numOutputs]; // This is the final result, a series of one-channel updates
 
 	precedingValuesPath[numOutputs - 1] = precedingValues[minIndex][numOutputs - 1];
 	updateValuesPath[numOutputs - 1] = updateValues[minIndex][numOutputs - 1];
 	for (int t = numOutputs - 2; t >= 0; --t)
 	{
-		int yz = precedingValuesPath[t + 1];
-		precedingValuesPath[t] = precedingValues[yz][t];
-		updateValuesPath[t] = updateValues[yz][t]; // = z?
+		int xy = precedingValuesPath[t + 1];
+		precedingValuesPath[t] = precedingValues[xy][t];
+		updateValuesPath[t] = updateValues[xy][t];
 	}
 
-	// Then we build a resultant actual-values series
+	// We're done with these now, we copied out the chosen path through them
+	for (int i = 0; i < 256; ++i)
+	{
+		delete[] precedingValues[i];
+		delete[] updateValues[i];
+	}
+
+	// Then we build a resultant actual-values series by walking the selected path forwards again
 	T* achievedOutput = new T[numOutputs];
 
 	for (int t = 0; t < numOutputs; ++t)
@@ -671,8 +671,6 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 	delete[] targetOutput;
 	delete[] precedingValuesPath;
 	delete[] achievedOutput;
-
-	delete giantBuffer;
 
 	clock_t end = clock();
 	double secondsElapsed = (1.0 * end - start) / CLOCKS_PER_SEC;
