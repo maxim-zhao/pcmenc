@@ -474,7 +474,7 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
 	printf("Processing %3.2f%%\n", 100.0);
 
 	// We select the smallest total cost
-	int minIndex = std::distance(lastCosts, std::min_element(lastCosts, lastCosts + 256));
+	int minIndex = (int)std::distance(lastCosts, std::min_element(lastCosts, lastCosts + 256));
 
 	printf("The cost metric in Viterbi is about %3.3f\n", lastCosts[minIndex]);
 
