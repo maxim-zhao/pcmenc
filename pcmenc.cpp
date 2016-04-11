@@ -597,7 +597,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 	{
 		uint8_t* p = giantBuffer + numOutputs * i * 2;
 		precedingValues[i] = p;
-		updateValues[i] = p + 256;
+		updateValues[i] = p + numOutputs;
 	}
 
 	printf("   Using cost function: L%d\n", costFunction);
