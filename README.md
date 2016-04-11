@@ -35,6 +35,23 @@ pcmenc -dt1 81 -dt2 81 -dt3 81 -rto 3 -r 16 input.wav
 
 A file will be produced with the suffix `.pcmenc`, e.g. `input.wav.pcmenc`. Binary include it in your program and invoke your player code accpording to its comments, and marvel at the quality of the audio!
 
+How it works
+------------
+
+* First, the sample is loaded into memory and converted to mono. 
+* It is then normalised to the range 0..1, by default in a way that clips the peaks to get a louder result. 
+* Next, for each sample:
+  * It iterates through all possible PSG volume states (including ones that are equivalent output but different channel values or ordering).
+  * For each possible state of "the other two channels", it selects the value for "the third channel" which will minimise the total error between the final output and the desired output. This error is defined by a configurable cost metric (by default, the time-weighted sum of squares of the deviation).
+  * This is done in a way which requires 512 × (number of output values) bytes of memory, which may mean more memory than your computer has if the audio files are long - beware!
+* The alternative might be a depth-first search, some research is needed.
+* The original authors describe it as a viterbi algorithm but I'm not sure it is...
+* Once this is done, it is able to select the final value with the minimum total error and back-track it to a series of values to produce this minimised error
+* The resulting stream is then passed into various packing methods to produce something amenable to use in real life:
+  * Packing into ROM banks
+  * Compressing (sometimes not effectively)
+  * Adding metadata to know when the end is reached
+
 Original readme
 ---------------
 
