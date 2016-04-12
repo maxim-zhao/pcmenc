@@ -15,7 +15,7 @@ The features I have added are:
  * BBC Micro
  * Lots of arcade games and esoteric home computers
 * Optimal bank packing
-* Player code for regular Z80 chips, targetting popular sampling rate
+* Player code for regular Z80 chips, targetting popular sampling rates
 * Some speedups, possibly MSVC specific
 * A 64-bit build to allow processing longer files (the process consumes huge amounts of RAM)
 * Support for packed 4-bit data, which often wins over RLE anyway
