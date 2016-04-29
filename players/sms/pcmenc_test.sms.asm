@@ -59,6 +59,7 @@ PSGInitEnd:
 retn
 .ends
 
-.section "player"
+.section "player" free
 .include "replayer_core_44100.asm"
 .ends
+
