@@ -26,7 +26,7 @@
 ;
 ; pcmenc should use the following command line arguments:
 ;
-; pcmenc -dt1 12 -dt2 12 -dt3 423 file.wav
+; pcmenc -rto 1 -dt1 12 -dt2 12 -dt3 423 file.wav
 ;
 ; and optionally -r to split sample into blocks for rom replayer
 ;

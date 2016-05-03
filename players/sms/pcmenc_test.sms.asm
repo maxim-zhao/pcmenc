@@ -60,6 +60,6 @@ retn
 .ends
 
 .section "player" free
-.include "replayer_core_44100.asm"
+.include "replayer_core_rle_rto3_44010Hz.asm"
 .ends
 
