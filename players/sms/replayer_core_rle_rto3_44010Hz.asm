@@ -49,13 +49,19 @@
 
 ;-------------------------------------
 ; Plays one sample
-; IN HL - Encoded sample start address
-; IX - Sample length (#pcm samples)
+; HL - pointes to triplet count followed by data
 ;-------------------------------------
 PLAY_SAMPLE:
   ; zero out the RLE counters
   ld c,$00
   ld de,$0000
+  ; get the triplet count
+  ld a, (hl)
+  inc hl
+  ld ixl, a
+  ld a, (hl)
+  inc hl
+  ld ixh, a
 
 PsgLoop:
 ; Calculate channel A volume
@@ -73,34 +79,34 @@ PsgDoneA:
   bit 0,a         ; 10 -> 19
   
 ; Calculate channel B volume
-  ld a,d          ; 4
-  sub $10         ; 7
-  jr nc,PsgWaitB  ; 7 (12)
-  ld a,(hl)       ; 7
-  inc hl          ; 6
-  ld d,a          ; 4
-  and $0f         ; 7
-  or $b0          ; 7
+  ld a,d          ;  4
+  sub $10         ;  7
+  jr nc,PsgWaitB  ;  7 (12)
+  ld a,(hl)       ;  7
+  inc hl          ;  6
+  ld d,a          ;  4
+  and $0f         ;  7
+  or $b0          ;  7
   out ($7f),a     ; 11 -> 60
 PsgDoneB:
   dec ix          ; 10 (real work)
   ld a,i          ;  9 -> 19
 
 ; Calculate channel C volume
-  ld a,e          ; 4
-  sub $10         ; 7
-  jr nc,PsgWaitC  ; 7 (12)
-  ld a,(hl)       ; 7
-  inc hl          ; 6
-  ld e,a          ; 4
-  and $0f         ; 7
-  or $d0          ; 7
+  ld a,e          ;  4
+  sub $10         ;  7
+  jr nc,PsgWaitC  ;  7 (12)
+  ld a,(hl)       ;  7
+  inc hl          ;  6
+  ld e,a          ;  4
+  and $0f         ;  7
+  or $d0          ;  7
   out ($7f),a     ; 11 -> 60
 PsgDoneC:
 
   ; dec ix was done above
-  ld a,ixh        ; 8
-  or ixl          ; 8
+  ld a,ixh        ;  8
+  or ixl          ;  8
   jp nz,PsgLoop   ; 10 -> 26 -> total 244
   ret
 

@@ -93,3 +93,5 @@ pcmenc.VC.db
 *.sym
 *.sms
 *.zip
+*.wav
+*.pcmenc

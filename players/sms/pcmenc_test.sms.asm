@@ -37,14 +37,13 @@ PSGInitEnd:
   otir
 
   ; invoke the player
-  ld b,256-1 ; bank count - can make it correct if wanted
+  ld b,375/16 ; bank count - can make it correct if wanted
   ld a,1 ; first bank
 -:push bc
     ld ($ffff),a
     inc a
     push af
-      ld ix,($8000)
-      ld hl,$8002
+      ld hl,$8000
       call PLAY_SAMPLE
     pop af
   pop bc
@@ -60,6 +59,6 @@ retn
 .ends
 
 .section "player" free
-.include "replayer_core_rle_rto3_44010Hz.asm"
+.include "replayer_core_packed_rto1_22050Hz.asm"
 .ends
 

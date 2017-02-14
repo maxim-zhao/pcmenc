@@ -26,7 +26,7 @@
 ;
 ; pcmenc should use the following command line arguments:
 ;
-; pcmenc -rto 2 -dt1 157 -dt2 12 -dt3 156 file.wav
+; pcmenc -p 0 -rto 2 -dt1 157 -dt2 12 -dt3 156 file.wav
 ;
 ; and optionally -r to split sample into blocks for rom replayer
 ;
@@ -52,12 +52,18 @@
 
 ;-------------------------------------
 ; Plays one sample
-; IN HL - Encoded sample start address
-; IX - Sample length (#pcm samples)
+; HL - pointes to triplet count followed by data
 ;-------------------------------------
 PLAY_SAMPLE:
   ld de,0
   ld bc,$007f ; so we can use out (c),a
+  ; get the triplet count
+  ld a, (hl)
+  inc hl
+  ld ixl, a
+  ld a, (hl)
+  inc hl
+  ld ixh, a
   
 PsgLoop:
 ; Calculate and output channel A volume

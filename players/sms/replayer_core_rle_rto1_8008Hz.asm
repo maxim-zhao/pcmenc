@@ -39,12 +39,17 @@
 
 ;-------------------------------------
 ; Plays one sample
-; IN HL - Encoded sample start address
-; IX - Sample length (#pcm samples)
+; HL - pointes to triplet count followed by data
 ;-------------------------------------
 PLAY_SAMPLE:
   ld de,0
   ld bc,0
+  ld a, (hl)
+  inc hl
+  ld ixl, a
+  ld a, (hl)
+  inc hl
+  ld ixh, a
 
 PsgLoop:
 ; Calculate channel A volume

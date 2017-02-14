@@ -746,7 +746,7 @@ void saveEncodedBuffer(const std::string& filename, const uint8_t* buffer, int l
 // Consumes only whole triplets
 // Consumes at most tripletCount triplets
 // Packs <= maxBytes bytes
-// Returns the number of bytes packed
+// Returns the number of triplets consumed - not the number of bytes emitted
 int chVolPackChunk(uint8_t*& pDest, uint8_t*& pSource, int maxTripletCount, int maxBytes, PackingType packingType)
 {
 	// We pack only whole numbers of triplets per bank
@@ -758,13 +758,17 @@ int chVolPackChunk(uint8_t*& pDest, uint8_t*& pSource, int maxTripletCount, int 
 		tripletCount = std::min(maxTripletCount, (maxBytes - 2) / 3);
 		break;
 	case PackingType_PackedVol:
-		tripletCount = std::min(maxTripletCount, (maxBytes - 2) * 2 / 3);
+		tripletCount = std::min(maxTripletCount, (int)(((int64_t)maxBytes - 2) * 2 / 3));
 		break;
 	default:
 		throw std::invalid_argument("Invalid packing type");
 	}
 
-	// Bug: may be >64KB...
+	if (tripletCount > 0xffff)
+	{
+		printf("Warning: chunk size %d truncated\n", tripletCount);
+	}
+
 	*pDest++ = (uint8_t)((tripletCount >> 0) & 0xff);
 	*pDest++ = (uint8_t)((tripletCount >> 8) & 0xff);
 
@@ -787,8 +791,8 @@ int chVolPackChunk(uint8_t*& pDest, uint8_t*& pSource, int maxTripletCount, int 
 		{
 			if (i & 1)
 			{
-				*pDest |= pSource[3 * i + 0];
-				*pDest++ = (uint8_t)(pSource[3 * i + 1] << 4 | pSource[3 * i + 2] << 4);
+				*(pDest-1) |= pSource[3 * i + 0];
+				*pDest++ = (uint8_t)(pSource[3 * i + 1] << 4 | pSource[3 * i + 2] << 0);
 			}
 			else
 			{
@@ -801,28 +805,36 @@ int chVolPackChunk(uint8_t*& pDest, uint8_t*& pSource, int maxTripletCount, int 
 		throw std::invalid_argument("Invalid packing type");
 	}
 
-	return tripletCount * 3 + 2;
+	return tripletCount;
 }
 
-uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, int sourceLength, int romSplit, int* destLength)
+uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, int sourceLength, int romSplit, int& destLength)
 {
 	uint8_t* result = new uint8_t[2 * sourceLength + 500];
 	uint8_t* pDest = result;
+	int totalPadding = 0;
+	int bankCount = 0;
 	if (romSplit == 0)
 	{
 		chVolPackChunk(pDest, pSource, sourceLength / 3, std::numeric_limits<int>::max(), packingType);
 	}
 	else
 	{
-		while (sourceLength > 0)
+		int tripletCount = sourceLength / 3;
+		while (tripletCount > 0)
 		{
 			// Pack a bank
-			int bytesPacked = chVolPackChunk(pDest, pSource, sourceLength / 3, romSplit, packingType);
-			sourceLength -= bytesPacked;
-			if (sourceLength > 0)
+			++bankCount;
+			auto pDestBefore = pDest;
+			int tripletsConsumed = chVolPackChunk(pDest, pSource, tripletCount, romSplit, packingType);
+			tripletCount -= tripletsConsumed;
+			pSource += tripletsConsumed * 3;
+			if (tripletCount > 0)
 			{
 				// Add padding if needed, but not on the last chunk
-				int padding = romSplit - bytesPacked;
+				int bytesEmitted = (int)(pDest - pDestBefore);
+				int padding = romSplit - bytesEmitted;
+				totalPadding += padding;
 				for (int i = 0; i < padding; ++i)
 				{
 					*pDest++ = 0;
@@ -830,7 +842,11 @@ uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, int sourceLength, 
 			}
 		};
 	}
-	*destLength = (uint32_t)(pDest - result);
+	destLength = (uint32_t)(pDest - result);
+	printf("Saved as %d bytes of data (%d banks with %d bytes padding)\n",
+		destLength,
+		bankCount,
+		totalPadding);
 	return result;
 }
 
@@ -1052,7 +1068,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
 	case PackingType_VolByte:
 	case PackingType_ChannelVolByte:
 	case PackingType_PackedVol:
-		destBuffer = chVolPack(packingType, binBuffer, binSize, romSplit, &destLength);
+		destBuffer = chVolPack(packingType, binBuffer, binSize, romSplit, destLength);
 		break;
 	default:
 		throw std::invalid_argument("Invalid packing type");
