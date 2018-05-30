@@ -37,7 +37,7 @@ PSGInitEnd:
   otir
 
   ; invoke the player
-  ld b,375/16 ; bank count - can make it correct if wanted
+  ld b,1049/16 ; bank count - can make it correct if wanted
   ld a,1 ; first bank
 -:push bc
     ld ($ffff),a
@@ -59,6 +59,6 @@ retn
 .ends
 
 .section "player" free
-.include "replayer_core_packed_rto1_22050Hz.asm"
+.include "replayer_core_packed_rto3_maxHz.asm"
 .ends
 
