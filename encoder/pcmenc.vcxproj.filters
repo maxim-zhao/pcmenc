@@ -30,7 +30,4 @@
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
-  <ItemGroup>
-    <Text Include="README.txt" />
-  </ItemGroup>
 </Project>
