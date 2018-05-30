@@ -522,7 +522,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     printf("   dt1 = %d  (Normalized: %1.3f)\n", (int)idt1, dt[0]);
     printf("   dt2 = %d  (Normalized: %1.3f)\n", (int)idt2, dt[1]);
     printf("   dt3 = %d  (Normalized: %1.3f)\n", (int)idt3, dt[2]);
-    printf("   Using %u bytes data precision\n", sizeof(T));;
+    printf("   Using %zu bytes data precision\n", sizeof(T));;
 
     // Generate a modified version of the inputs to account for any
     // jitter in the output timings, by sampling at the relative offsets
@@ -1076,6 +1076,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
     delete[] destBuffer;
 }
 
+// A class which parses the commandline args into an internal dictionary, and then does some type conversion for us.
 class Args
 {
     std::map<std::string, std::string> _args;
@@ -1164,7 +1165,7 @@ int main(int argc, char** argv)
         int dt2 = args.getInt("dt2", 0);
         int dt3 = args.getInt("dt3", 0);
         Chip chip = (Chip)args.getInt("chip", (int)Chip::SN76489);
-        DataPrecision precision = (DataPrecision)args.getInt("precision", (int)DataPrecision_Float);
+        DataPrecision precision = (DataPrecision)args.getInt("precision", (int)DataPrecision::Float);
 
         if (filename.empty())
         {
