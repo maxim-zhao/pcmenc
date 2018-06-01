@@ -29,5 +29,8 @@
     <ClInclude Include="st.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="dkm.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

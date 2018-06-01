@@ -170,6 +170,7 @@
     <ClCompile Include="resample.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="dkm.hpp" />
     <ClInclude Include="resampl.h" />
     <ClInclude Include="st.h" />
   </ItemGroup>

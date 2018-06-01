@@ -35,6 +35,7 @@
 #include <ctime>
 
 #include "st.h"
+#include "dkm.hpp"
 
 // Minimum allowed frequency difference for not doing frequency conversion
 #define MIN_ALLOWED_FREQ_DIFF 0.005
@@ -52,7 +53,8 @@ enum class PackingType
     RLE3 = 1,
     VolByte = 2,
     ChannelVolByte = 3,
-    PackedVol = 4
+    PackedVol = 4,
+    Vector3 = 5
 };
 
 enum class InterpolationType
@@ -312,7 +314,7 @@ double* loadSamples(const std::string& filename, int wantedFrequency, int& count
     }
     else
     {
-        printf("Resampling input wave from %dHz to %dHz\n", (int)samplesPerSec, (int)wantedFrequency);
+        printf(" Resampling input wave from %dHz to %dHz...", (int)samplesPerSec, (int)wantedFrequency);
         retSamples = resample(tempSamples, sampleNum, samplesPerSec, wantedFrequency, count);
     }
 
@@ -519,9 +521,9 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 
     printf("Viterbi SNR optimization:\n");
     printf("   %d input samples per PSG triplet output\n", samplesPerTriplet);
-    printf("   dt1 = %d  (Normalized: %1.3f)\n", (int)idt1, dt[0]);
-    printf("   dt2 = %d  (Normalized: %1.3f)\n", (int)idt2, dt[1]);
-    printf("   dt3 = %d  (Normalized: %1.3f)\n", (int)idt3, dt[2]);
+    printf("   dt1 = %d  (Normalized: %1.3f)\n", idt1, dt[0]);
+    printf("   dt2 = %d  (Normalized: %1.3f)\n", idt2, dt[1]);
+    printf("   dt3 = %d  (Normalized: %1.3f)\n", idt3, dt[2]);
     printf("   Using %zu bytes data precision\n", sizeof(T));;
 
     // Generate a modified version of the inputs to account for any
@@ -982,6 +984,91 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncre
     return destBuffer;
 }
 
+// Encodes the buffer using vector compression
+uint8_t* vectorPack(PackingType packing, uint8_t* pData, int dataLength, int romSplit, int& destLength)
+{
+    // Compute the result size
+    int chunkSize; // Bytes compressed at a time
+    switch (packing)
+    {
+    case PackingType::Vector3: 
+        chunkSize = 6; // 6 nibbles = 3 bytes
+        break;
+    default: 
+        throw std::invalid_argument("Invalid packing type");
+    }
+    // Size in bytes of the dictionaries for each split
+    int dictionarySize = 256 * chunkSize / 2;
+    // Remaining number of output bytes per split
+    int outputBytesPerSplit = romSplit - dictionarySize - 2;
+    // Number of bytes of input consumed for each total romSplit of output
+    int inputBytesPerSplit = outputBytesPerSplit * chunkSize;
+
+    // We need to allocate the result buffer
+    // We have as many dictionaries as there are split parts
+    int numSplits = dataLength / inputBytesPerSplit + (dataLength % inputBytesPerSplit == 0 ? 0 : 1);
+    // And the data is crunched by a factor of the chunk size
+    destLength = dataLength / chunkSize + numSplits * (dictionarySize + 2);
+    auto pResult = new uint8_t[destLength];
+    auto pDest = pResult; // Working pointer
+
+    printf(
+        "Compressing %d bytes to %d chunks, total %d bytes (%.2f%% compression)\n",
+        dataLength,
+        numSplits,
+        destLength,
+        (dataLength - destLength) * 100.0/dataLength);
+
+    int chunksRemaining = dataLength / chunkSize; // Truncates! We can't encode partial chunks at EOF
+    while (chunksRemaining > 0)
+    {
+        printf("Processing %3.2f%%\r", std::abs(100 - 100.0 * chunksRemaining * chunkSize / dataLength));
+        int chunksForThisSplit = std::min(chunksRemaining, outputBytesPerSplit);
+        chunksRemaining -= chunksForThisSplit;
+
+        // Convert to the C++ types needed for dkm, also moves the binBuffer pointer on
+        // We convert the nibbles to floats, as it needs to maintain an average...
+        std::vector<std::array<float, 6>> chunks(chunksForThisSplit); // TODO can't do variable chunk sizes here, do I have to template this?
+        for (int j = 0; j < chunksForThisSplit; ++j)
+        {
+            for (int k = 0; k < chunkSize; ++k)
+            {
+                chunks[j][k] = pData[k];
+            }
+            pData += chunkSize;
+        }
+
+        // Vectorise - this is the majority of the time taken
+        auto clusters = dkm::kmeans_lloyd(chunks, 256);
+
+        // Emit the dictionaries
+        for (const auto& cluster : std::get<0>(clusters))
+        {
+            auto p = pDest;
+            for (int i = 0; i < chunkSize; i += 2)
+            {
+                auto b1 = (uint8_t)(cluster[i] + 0.5);
+                auto b2 = (uint8_t)(cluster[i+1] + 0.5);
+                *p = b1 << 4 | b2;
+                p += 256;
+            }
+            ++pDest;
+        }
+        pDest += 256 * (chunkSize/2 - 1);
+        // And the index count
+        *pDest++ = (uint8_t)(chunksForThisSplit >> 8);
+        *pDest++ = chunksForThisSplit & 0xff;
+
+        auto indices = std::get<1>(clusters);
+        // Emit the samples
+        for (const unsigned& index : indices)
+        {
+            *pDest++ = (uint8_t)index;
+        }
+    }
+    printf("Processing %3.2f%%\n", 100.0);
+    return pResult;
+}
 
 // Converts a wav file to PSG binary format, including encoding
 void convertWav(const std::string& filename, bool saveInternal, int costFunction, InterpolationType interpolation,
@@ -1066,6 +1153,9 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
     case PackingType::PackedVol:
         destBuffer = chVolPack(packingType, binBuffer, binSize, romSplit, destLength);
         break;
+    case PackingType::Vector3:
+        destBuffer = vectorPack(packingType, binBuffer, binSize, romSplit, destLength);
+        break;
     default:
         throw std::invalid_argument("Invalid packing type");
     }
@@ -1143,29 +1233,26 @@ public:
 };
 
 
-//////////////////////////////////////////////////////////////////////////////
-// Program main.
-//
 int main(int argc, char** argv)
 {
     try
     {
         Args args(argc, argv);
 
-        std::string filename = args.getString("filename", "");
-        int romSplit = args.getInt("r", 0) * 1024;
-        bool saveInternal = args.exists("si");
-        PackingType packingType = (PackingType)args.getInt("p", (int)PackingType::RLE);
-        int ratio = args.getInt("rto", 1);
-        InterpolationType interpolation = (InterpolationType)args.getInt("i", (int)InterpolationType::Lagrange11);
-        int costFunction = args.getInt("c", 2);
-        int cpuFrequency = args.getInt("cpuf", 3579545);
-        int amplitude = args.getInt("a", 115);
-        int dt1 = args.getInt("dt1", 0);
-        int dt2 = args.getInt("dt2", 0);
-        int dt3 = args.getInt("dt3", 0);
-        Chip chip = (Chip)args.getInt("chip", (int)Chip::SN76489);
-        DataPrecision precision = (DataPrecision)args.getInt("precision", (int)DataPrecision::Float);
+        auto filename = args.getString("filename", "");
+        auto romSplit = args.getInt("r", 0) * 1024;
+        auto saveInternal = args.exists("si");
+        auto packingType = (PackingType)args.getInt("p", (int)PackingType::RLE);
+        auto ratio = args.getInt("rto", 1);
+        auto interpolation = (InterpolationType)args.getInt("i", (int)InterpolationType::Lagrange11);
+        auto costFunction = args.getInt("c", 2);
+        auto cpuFrequency = args.getInt("cpuf", 3579545);
+        auto amplitude = args.getInt("a", 115);
+        auto dt1 = args.getInt("dt1", 0);
+        auto dt2 = args.getInt("dt2", 0);
+        auto dt3 = args.getInt("dt3", 0);
+        auto chip = (Chip)args.getInt("chip", (int)Chip::SN76489);
+        auto precision = (DataPrecision)args.getInt("precision", (int)DataPrecision::Float);
 
         if (filename.empty())
         {
@@ -1183,6 +1270,7 @@ int main(int argc, char** argv)
                 "                        2 = 1 byte vol\n"
                 "                        3 = 1 byte {ch, vol} pairs\n"
                 "                        4 = big-endian packed {vol, vol} pairs\n"
+                "                        5 = K-means clustered vectors tables\n"
                 "\n"
                 "    -cpuf <freq>    CPU frequency of the CPU (Hz)\n"
                 "                        Default: 3579545\n"
