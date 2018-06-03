@@ -54,7 +54,8 @@ enum class PackingType
     VolByte = 2,
     ChannelVolByte = 3,
     PackedVol = 4,
-    Vector3 = 5
+    Vector6 = 5,
+    Vector3 = 6
 };
 
 enum class InterpolationType
@@ -984,21 +985,89 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncre
     return destBuffer;
 }
 
+// Worker method for vector compressing a chunk of data
+// Needs to be templated on the chunk size because of the use of std::array below
+template<size_t N>
+void vectorConvertChunk(uint8_t* pDest, uint8_t* pSource, int dictionarySize, int chunksForThisSplit)
+{
+    // Convert to the C++ types needed for dkm, also moves the binBuffer pointer on
+    // We convert the nibbles to floats, as it needs to maintain an average...
+    std::vector<std::array<float, N>> chunks(chunksForThisSplit);
+    for (auto j = 0; j < chunksForThisSplit; ++j)
+    {
+        for (auto k = 0; k < N; ++k)
+        {
+            chunks[j][k] = pSource[k];
+        }
+        pSource += N;
+    }
+
+    // Vectorise - this is the majority of the time taken
+    auto clusters = dkm::kmeans_lloyd(chunks, 256);
+
+    // Emit the dictionaries
+    for (const auto& cluster : std::get<0>(clusters))
+    {
+        auto p = pDest;
+        if (N % 2 == 0)
+        {
+            // Even N: we just loop over pairs
+            for (int i = 0; i < N; i += 2)
+            {
+                auto b1 = (uint8_t)(cluster[i] + 0.5);
+                auto b2 = (uint8_t)(cluster[i+1] + 0.5);
+                *p = b1 << 4 | b2;
+                p += 256;
+            }
+        }
+        else
+        {
+            // Odd N : we need to pack the last one specially
+            for (int i = 0; i < N-1; i += 2)
+            {
+                auto b1 = (uint8_t)(cluster[i] + 0.5);
+                auto b2 = (uint8_t)(cluster[i+1] + 0.5);
+                *p = b1 << 4 | b2;
+                p += 256;
+            }
+            *p = (uint8_t)(cluster[N-1] + 0.5) << 4;
+        }
+        ++pDest;
+    }
+    //The pointer is left at the end of the first dictionary, we move it past the rest
+    pDest += dictionarySize - 256;
+    // And the index count
+    *pDest++ = chunksForThisSplit & 0xff;
+    *pDest++ = (uint8_t)(chunksForThisSplit >> 8);
+
+    auto indices = std::get<1>(clusters);
+    // Emit the samples
+    for (const unsigned& index : indices)
+    {
+        *pDest++ = (uint8_t)index;
+    }
+}
+
 // Encodes the buffer using vector compression
 uint8_t* vectorPack(PackingType packing, uint8_t* pData, int dataLength, int romSplit, int& destLength)
 {
     // Compute the result size
     int chunkSize; // Bytes compressed at a time
+    int dictionarySize; // Size in bytes of the dictionaries for each split
+
     switch (packing)
     {
-    case PackingType::Vector3: 
+    case PackingType::Vector6: 
         chunkSize = 6; // 6 nibbles = 3 bytes
+        dictionarySize = 256 * 3; // 3 bytes per dictionary entry
+        break;
+    case PackingType::Vector3:
+        chunkSize = 3; // 3 nibbles = 1.5 bytes, padded to 2
+        dictionarySize = 256 * 2; // 2 bytes per dictionary entry
         break;
     default: 
         throw std::invalid_argument("Invalid packing type");
     }
-    // Size in bytes of the dictionaries for each split
-    int dictionarySize = 256 * chunkSize / 2;
     // Remaining number of output bytes per split
     int outputBytesPerSplit = romSplit - dictionarySize - 2;
     // Number of bytes of input consumed for each total romSplit of output
@@ -1026,44 +1095,16 @@ uint8_t* vectorPack(PackingType packing, uint8_t* pData, int dataLength, int rom
         int chunksForThisSplit = std::min(chunksRemaining, outputBytesPerSplit);
         chunksRemaining -= chunksForThisSplit;
 
-        // Convert to the C++ types needed for dkm, also moves the binBuffer pointer on
-        // We convert the nibbles to floats, as it needs to maintain an average...
-        std::vector<std::array<float, 6>> chunks(chunksForThisSplit); // TODO can't do variable chunk sizes here, do I have to template this?
-        for (int j = 0; j < chunksForThisSplit; ++j)
+        switch (packing)
         {
-            for (int k = 0; k < chunkSize; ++k)
-            {
-                chunks[j][k] = pData[k];
-            }
-            pData += chunkSize;
-        }
-
-        // Vectorise - this is the majority of the time taken
-        auto clusters = dkm::kmeans_lloyd(chunks, 256);
-
-        // Emit the dictionaries
-        for (const auto& cluster : std::get<0>(clusters))
-        {
-            auto p = pDest;
-            for (int i = 0; i < chunkSize; i += 2)
-            {
-                auto b1 = (uint8_t)(cluster[i] + 0.5);
-                auto b2 = (uint8_t)(cluster[i+1] + 0.5);
-                *p = b1 << 4 | b2;
-                p += 256;
-            }
-            ++pDest;
-        }
-        pDest += 256 * (chunkSize/2 - 1);
-        // And the index count
-        *pDest++ = (uint8_t)(chunksForThisSplit >> 8);
-        *pDest++ = chunksForThisSplit & 0xff;
-
-        auto indices = std::get<1>(clusters);
-        // Emit the samples
-        for (const unsigned& index : indices)
-        {
-            *pDest++ = (uint8_t)index;
+        case PackingType::Vector3:
+            vectorConvertChunk<3>(pDest, pData, dictionarySize, chunksForThisSplit);
+            break;
+        case PackingType::Vector6:
+            vectorConvertChunk<6>(pDest, pData, dictionarySize, chunksForThisSplit);
+            break;
+        default: 
+            throw std::invalid_argument("Invalid packing type");
         }
     }
     printf("Processing %3.2f%%\n", 100.0);
@@ -1153,6 +1194,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
     case PackingType::PackedVol:
         destBuffer = chVolPack(packingType, binBuffer, binSize, romSplit, destLength);
         break;
+    case PackingType::Vector6:
     case PackingType::Vector3:
         destBuffer = vectorPack(packingType, binBuffer, binSize, romSplit, destLength);
         break;
@@ -1270,7 +1312,8 @@ int main(int argc, char** argv)
                 "                        2 = 1 byte vol\n"
                 "                        3 = 1 byte {ch, vol} pairs\n"
                 "                        4 = big-endian packed {vol, vol} pairs\n"
-                "                        5 = K-means clustered vectors tables\n"
+                "                        5 = K-means clustered vector tables (6 values per vector)\n"
+                "                        6 = K-means clustered vector tables (3 values per vector)\n"
                 "\n"
                 "    -cpuf <freq>    CPU frequency of the CPU (Hz)\n"
                 "                        Default: 3579545\n"
