@@ -113,7 +113,7 @@ static long SrcEX(resample_t r, long Nx);
 /*
  * Process options
  */
-int st_resample_getopts(eff_t effp, int n, char **argv) 
+int st_resample_getopts(eff_t effp, int n, const char **argv) 
 {
         resample_t r = (resample_t) effp->priv;
 

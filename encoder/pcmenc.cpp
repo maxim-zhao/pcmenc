@@ -26,7 +26,7 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
-#include <stdlib.h>
+#include <cstdlib>
 #include <string>
 #include <fstream>
 #include <iterator>
@@ -45,8 +45,8 @@
 #define MAX(a,b) fmax(a, b) // Beats std::max, same as ?:
 #define ABS(a)   std::abs(a) // Beats fabs, ?:
 
-#define str2ul(s) ((uint32_t)s[0]<<0|(uint32_t)s[1]<<8|(uint32_t)s[2]<<16|(uint32_t)s[3]<<24)
-#define needSwap() (*(uint32_t*)"A   " == 0x41202020)
+#define STR2UL(s) ((uint32_t)(s)[0]<<0|(uint32_t)(s)[1]<<8|(uint32_t)(s)[2]<<16|(uint32_t)(s)[3]<<24)
+#define NEED_SWAP() (*(uint32_t*)"A   " == 0x41202020)
 
 enum class PackingType
 {
@@ -103,7 +103,7 @@ public:
     {
         uint32_t v;
         _f.read((char*)&v, sizeof(uint32_t));
-        if (needSwap())
+        if (NEED_SWAP())
         {
             v = ((v >> 24) & 0x000000ff) | ((v >> 8) & 0x0000ff00) |
                 ((v << 8) & 0x00ff0000) | ((v << 24) & 0xff000000);
@@ -115,7 +115,7 @@ public:
     {
         uint16_t v;
         _f.read((char*)&v, sizeof(uint16_t));
-        if (needSwap())
+        if (NEED_SWAP())
         {
             v = ((v << 8) & 0x00ff0000) | ((v << 24) & 0xff000000);
         }
@@ -129,9 +129,9 @@ public:
         return v;
     }
 
-    FileReader& checkMarker(char marker[5])
+    FileReader& checkMarker(const char marker[5])
     {
-        if (read32() != str2ul(marker))
+        if (read32() != STR2UL(marker))
         {
             std::ostringstream ss;
             ss << "Marker " << marker << " not found in file";
@@ -145,7 +145,7 @@ public:
         return _size;
     }
 
-    FileReader& seek(int offset)
+    FileReader& seek(const int offset)
     {
         _f.seekg(offset, std::ios::cur);
         return *this;
@@ -156,7 +156,7 @@ public:
 // Resamples a sample from inRate to outRate and returns a new buffer with
 // the resampled data and the length of the new buffer.
 //
-double* resample(double* in, int inLen, int inRate, int outRate, int& outLen)
+double* resample(const double* in, const int inLen, const int inRate, const int outRate, int& outLen)
 {
     // Configure the resampler
     st_effect_t effect =
@@ -166,25 +166,25 @@ double* resample(double* in, int inLen, int inRate, int outRate, int& outLen)
         st_resample_getopts, st_resample_start, st_resample_flow,
         st_resample_drain, st_resample_stop
     };
-    st_effect eff;
+    st_effect eff{};
     eff.h = &effect;
-    st_signalinfo_t iinfo = { (st_rate_t)inRate, 4, 0, 1, needSwap() };
-    st_signalinfo_t oinfo = { (st_rate_t)outRate, 4, 0, 1, needSwap() };
+    st_signalinfo_t iinfo = { (st_rate_t)inRate, 4, 0, 1, NEED_SWAP() };
+    st_signalinfo_t oinfo = { (st_rate_t)outRate, 4, 0, 1, NEED_SWAP() };
     st_updateeffect(&eff, &iinfo, &oinfo, 0);
 
     // Convert to required format
-    st_sample_t* ibuf = new st_sample_t[inLen];
+    const auto ibuf = new st_sample_t[inLen];
     for (int i = 0; i < inLen; ++i)
     {
         ibuf[i] = ST_FLOAT_DDWORD_TO_SAMPLE(in[i]);
     }
-    char* argv[] = { "-ql" };
+    const char* argv[] = { "-ql" };
     st_resample_getopts(&eff, 1, argv);
     st_resample_start(&eff);
 
     // Allocate output buffer
-    uint32_t outBufLen = (uint32_t)((double)inLen * outRate / inRate) + 500;
-    st_sample_t* obuf = new st_sample_t[outBufLen];
+    const uint32_t outBufLen = (uint32_t)((double)inLen * outRate / inRate) + 500;
+    const auto obuf = new st_sample_t[outBufLen];
 
     // Pass samples into resampler
     st_size_t iLen = 0;
@@ -193,7 +193,7 @@ double* resample(double* in, int inLen, int inRate, int outRate, int& outLen)
     {
         st_size_t idone = ST_BUFSIZ;
         st_size_t odone = ST_BUFSIZ;
-        int rv = st_resample_flow(&eff, ibuf + iLen, obuf + oLen, &idone, &odone);
+        const int rv = st_resample_flow(&eff, ibuf + iLen, obuf + oLen, &idone, &odone);
         iLen += idone;
         oLen += odone;
         if (rv == ST_EOF || iLen + idone > (st_size_t)inLen)
@@ -236,7 +236,7 @@ double* loadSamples(const std::string& filename, int wantedFrequency, int& count
 
     f.checkMarker("RIFF");
 
-    uint32_t riffSize = f.read32();
+    const uint32_t riffSize = f.read32();
     if (riffSize != f.size() - 8)
     {
         throw std::runtime_error("File size does not match RIFF header");
@@ -246,23 +246,23 @@ double* loadSamples(const std::string& filename, int wantedFrequency, int& count
 
     uint32_t chunkSize = f.read32();
 
-    uint16_t formatType = f.read16();
+    const uint16_t formatType = f.read16();
     if (formatType != 0 && formatType != 1)
     {
         throw std::runtime_error("Unsuported format type");
     }
 
-    uint16_t channels = f.read16();
+    const uint16_t channels = f.read16();
     if (channels != 1 && channels != 2)
     {
         throw std::runtime_error("Unsuported channel count");
     }
 
-    uint32_t samplesPerSec = f.read32();
+    const uint32_t samplesPerSec = f.read32();
 
     f.seek(6); // discard avgBytesPerSec (4), blockAlign (2)
 
-    uint16_t bitsPerSample = f.read16();
+    const uint16_t bitsPerSample = f.read16();
     if (bitsPerSample & 0x07)
     {
         throw std::runtime_error("Only supports 8, 16, 24, and 32 bits per sample");
@@ -271,18 +271,18 @@ double* loadSamples(const std::string& filename, int wantedFrequency, int& count
     // Seek to the next chunk
     f.seek(chunkSize - 16);
 
-    while (f.read32() != str2ul("data"))
+    while (f.read32() != STR2UL("data"))
     {
         // Some other chunk
         chunkSize = f.read32();
         f.seek(chunkSize);
     }
 
-    uint32_t dataSize = f.read32();
-    uint32_t bytesPerSample = ((bitsPerSample + 7) / 8);
-    uint32_t sampleNum = dataSize / bytesPerSample / channels;
+    const uint32_t dataSize = f.read32();
+    const uint32_t bytesPerSample = ((bitsPerSample + 7) / 8);
+    const uint32_t sampleNum = dataSize / bytesPerSample / channels;
 
-    double* tempSamples = new double[sampleNum];
+    const auto tempSamples = new double[sampleNum];
 
     for (uint32_t i = 0; i < sampleNum; ++i)
     {
@@ -291,14 +291,14 @@ double* loadSamples(const std::string& filename, int wantedFrequency, int& count
         {
             if (bytesPerSample == 1)
             {
-                uint8_t val = f.read();
+                const uint8_t val = f.read();
                 value += ((int)val - 0x80) / 128.0 / channels;
             }
             else {
                 uint32_t val = 0;
                 for (uint32_t j = 0; j < bytesPerSample; j++)
                 {
-                    uint8_t tmp = f.read();
+                    const uint8_t tmp = f.read();
                     val = (val >> 8) | (tmp << 24);
                 }
                 value += (int)val / 2147483649.0 / channels;
@@ -325,7 +325,7 @@ double* loadSamples(const std::string& filename, int wantedFrequency, int& count
     return retSamples;
 }
 
-void dump(const std::string filename, const uint8_t* pData, int byteCount)
+void dump(const std::string& filename, const uint8_t* pData, int byteCount)
 {
     std::ofstream f;
     f.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
@@ -475,7 +475,7 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
     printf("Processing %3.2f%%\n", 100.0);
 
     // We select the smallest total cost
-    int minIndex = (int)std::distance(lastCosts, std::min_element(lastCosts, lastCosts + 256));
+    auto minIndex = (int)std::distance(lastCosts, std::min_element(lastCosts, lastCosts + 256));
 
     printf("The cost metric in Viterbi is about %3.3f\n", lastCosts[minIndex]);
 
@@ -493,15 +493,15 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     InterpolationType interpolation, int costFunction,
     bool saveInternal, int& binSize, const double vol[16])
 {
-    clock_t start = clock();
+    const clock_t start = clock();
 
     // We normalise the inputs to the range 0..1, 
     // plus add some padding on the end to avoid needing range checks at that end
-    T* normalisedInputs = new T[length + 256];
+    auto* normalisedInputs = new T[length + 256];
 
-    auto minmax = std::minmax_element(samples, samples + length);
-    auto inputMin = *minmax.first;
-    auto inputMax = *minmax.second;
+    const auto minmax = std::minmax_element(samples, samples + length);
+    const auto inputMin = *minmax.first;
+    const auto inputMax = *minmax.second;
 
     for (int i = 0; i < length; i++)
     {
@@ -531,7 +531,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     // Generate a modified version of the inputs to account for any
     // jitter in the output timings, by sampling at the relative offsets
     int numOutputs = (length + samplesPerTriplet - 1) / samplesPerTriplet * 3;
-    T* targetOutput = new T[numOutputs];
+    auto* targetOutput = new T[numOutputs];
 
     int numLeft;
     int numRight;
@@ -621,14 +621,14 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 
     // Then we walk the preceding values and update values for the discovered minimum-cost index
     // backwards to the start
-    uint8_t* precedingValuesPath = new uint8_t[numOutputs]; // This is only for the benefit of some analysis below
-    uint8_t* updateValuesPath = new uint8_t[numOutputs]; // This is the final result, a series of one-channel updates
+    const auto precedingValuesPath = new uint8_t[numOutputs]; // This is only for the benefit of some analysis below
+    const auto updateValuesPath = new uint8_t[numOutputs]; // This is the final result, a series of one-channel updates
 
     precedingValuesPath[numOutputs - 1] = precedingValues[minIndex][numOutputs - 1];
     updateValuesPath[numOutputs - 1] = updateValues[minIndex][numOutputs - 1];
     for (int t = numOutputs - 2; t >= 0; --t)
     {
-        int xy = precedingValuesPath[t + 1];
+        const int xy = precedingValuesPath[t + 1];
         precedingValuesPath[t] = precedingValues[xy][t];
         updateValuesPath[t] = updateValues[xy][t];
     }
@@ -641,7 +641,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     }
 
     // Then we build a resultant actual-values series by walking the selected path forwards again
-    T* achievedOutput = new T[numOutputs];
+    auto* achievedOutput = new T[numOutputs];
 
     for (int t = 0; t < numOutputs; ++t)
     {
@@ -669,7 +669,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
         mi += (targetOutput[3 * i + 0]) * dt[0] + (targetOutput[3 * i + 1]) * dt[1] + (targetOutput[3 * i + 2]) * dt[2];
     }
 
-    double  var = en - mi*mi * 3 / numOutputs;
+    const double  var = en - mi*mi * 3 / numOutputs;
     printf("SNR is about %3.2f\n", 10 * log10(var / er));
 
     delete[] normalisedInputs;
@@ -677,8 +677,8 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     delete[] precedingValuesPath;
     delete[] achievedOutput;
 
-    clock_t end = clock();
-    double secondsElapsed = (1.0 * end - start) / CLOCKS_PER_SEC;
+    const clock_t end = clock();
+    const double secondsElapsed = (1.0 * end - start) / CLOCKS_PER_SEC;
     printf(
         "Converted %d samples to %d outputs in %.2fs = %.0f samples per second\n",
         length,
@@ -698,10 +698,10 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
 uint8_t* rleEncode(const uint8_t* pData, int dataLen, int rleIncrement, int& resultLen)
 {
     // Allocate a worst-case-sized buffer
-    uint8_t* result = new uint8_t[2 * dataLen + 2];
+    const auto result = new uint8_t[2 * dataLen + 2];
 
     // Start with the triplet count
-    size_t tripletCount = dataLen / 3;
+    const size_t tripletCount = dataLen / 3;
     result[0] = (tripletCount >> 0) & 0xff;
     result[1] = (tripletCount >> 8) & 0xff;
 
@@ -712,8 +712,8 @@ uint8_t* rleEncode(const uint8_t* pData, int dataLen, int rleIncrement, int& res
 
     for (int i = 3; i < dataLen; i++)
     {
-        int channel = i % 3;
-        bool isLastTriplet = i >= dataLen - 3;
+        const int channel = i % 3;
+        const bool isLastTriplet = i >= dataLen - 3;
 
         if (currentState[channel] == pData[i] && rleCounts[channel] < 15 - (rleIncrement - 1) && !isLastTriplet)
         {
@@ -813,9 +813,9 @@ int chVolPackChunk(uint8_t*& pDest, uint8_t*& pSource, int maxTripletCount, int 
     return tripletCount;
 }
 
-uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, int sourceLength, int romSplit, int& destLength)
+uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, const int sourceLength, const int romSplit, int& destLength)
 {
-    uint8_t* result = new uint8_t[2 * sourceLength + 500];
+    auto* result = new uint8_t[2 * sourceLength + 500];
     uint8_t* pDest = result;
     int totalPadding = 0;
     int bankCount = 0;
@@ -830,15 +830,15 @@ uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, int sourceLength, 
         {
             // Pack a bank
             ++bankCount;
-            auto pDestBefore = pDest;
-            int tripletsConsumed = chVolPackChunk(pDest, pSource, tripletCount, romSplit, packingType);
+            const auto pDestBefore = pDest;
+            const int tripletsConsumed = chVolPackChunk(pDest, pSource, tripletCount, romSplit, packingType);
             tripletCount -= tripletsConsumed;
             pSource += tripletsConsumed * 3;
             if (tripletCount > 0)
             {
                 // Add padding if needed, but not on the last chunk
-                int bytesEmitted = (int)(pDest - pDestBefore);
-                int padding = romSplit - bytesEmitted;
+                const auto bytesEmitted = (int)(pDest - pDestBefore);
+                const int padding = romSplit - bytesEmitted;
                 totalPadding += padding;
                 for (int i = 0; i < padding; ++i)
                 {
@@ -862,20 +862,20 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncre
     if (romSplit == 0)
     {
         printf("RLE encoding with no split\n");
-        auto result = rleEncode(binBuffer, length, rleIncrement, resultLen);
+        const auto result = rleEncode(binBuffer, length, rleIncrement, resultLen);
         printf(
             "- Encoded %d volume commands (%d bytes) to %d bytes of data,\n"
             "  effective compression ratio %.2f%%\n",
             length,
             length / 2,
             resultLen,
-            (1.0 * length / 2 - resultLen) / (length / 2) * 100);
+            (1.0 * length / 2.0 - resultLen) / (length / 2.0) * 100);
         return result;
     }
 
     printf("RLE encoding with splits at %dKB boundaries", romSplit / 1024);
 
-    uint8_t* destBuffer = new uint8_t[2 * length];
+    auto* destBuffer = new uint8_t[2 * length];
     uint8_t* pDest = destBuffer;
     resultLen = 0;
 
@@ -896,7 +896,7 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncre
         for (;;)
         {
             // Point at the data to compress
-            auto bankSrc = binBuffer + 3 * tripletsEncoded;
+            const auto bankSrc = binBuffer + 3 * tripletsEncoded;
 
             // Compress
             pEncoded = rleEncode(bankSrc, tripletCount * 3, rleIncrement, encodedLength);
@@ -960,7 +960,7 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncre
         // Blank fill except on the past page
         if (tripletsRemaining > tripletCount)
         {
-            int lastPadding = romSplit - encodedLength;
+            const int lastPadding = romSplit - encodedLength;
             totalPadding += lastPadding;
             for (int i = 0; i < lastPadding; ++i)
             {
@@ -982,21 +982,21 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncre
         length / 2,
         resultLen,
         totalPadding,
-        (1.0 * length / 2 - resultLen) / (length / 2) * 100);
+        (1.0 * length / 2 - resultLen) / (length / 2.0) * 100);
     return destBuffer;
 }
 
 // Worker method for vector compressing a chunk of data
 // Needs to be templated on the chunk size because of the use of std::array below
 template<size_t N>
-void vectorConvertChunk(uint8_t* pDest, uint8_t* pSource, int dictionarySize, int chunksForThisSplit)
+void vectorConvertChunk(uint8_t* pDest, const uint8_t* pSource, const int dictionarySize, int chunksForThisSplit)
 {
     // Convert to the C++ types needed for dkm, also moves the binBuffer pointer on
     // We convert the nibbles to floats, as it needs to maintain an average...
     std::vector<std::array<float, N>> chunks(chunksForThisSplit);
     for (auto j = 0; j < chunksForThisSplit; ++j)
     {
-        for (auto k = 0; k < N; ++k)
+        for (auto k = 0U; k < N; ++k)
         {
             chunks[j][k] = pSource[k];
         }
@@ -1013,25 +1013,21 @@ void vectorConvertChunk(uint8_t* pDest, uint8_t* pSource, int dictionarySize, in
         if (N % 2 == 0)
         {
             // Even N: we just loop over pairs
-            for (int i = 0; i < N; i += 2)
+            for (auto i = 0U; i < N; i += 2)
             {
-                auto b1 = (uint8_t)(cluster[i] + 0.5);
-                auto b2 = (uint8_t)(cluster[i+1] + 0.5);
-                *p = b1 << 4 | b2;
+                *p = std::lroundf(cluster[i]) << 4 | std::lroundf(cluster[i+1]);
                 p += 256;
             }
         }
         else
         {
             // Odd N : we need to pack the last one specially
-            for (int i = 0; i < N-1; i += 2)
+            for (auto i = 0U; i < N-1; i += 2)
             {
-                auto b1 = (uint8_t)(cluster[i] + 0.5);
-                auto b2 = (uint8_t)(cluster[i+1] + 0.5);
-                *p = b1 << 4 | b2;
+                *p = std::lroundf(cluster[i]) << 4 | std::lroundf(cluster[i+1]);
                 p += 256;
             }
-            *p = (uint8_t)(cluster[N-1] + 0.5) << 4;
+            *p = std::lroundf(cluster[N-1]) << 4;
         }
         ++pDest;
     }
@@ -1070,17 +1066,17 @@ uint8_t* vectorPack(PackingType packing, uint8_t* pData, int dataLength, int rom
         throw std::invalid_argument("Invalid packing type");
     }
     // Remaining number of output bytes per split
-    int outputBytesPerSplit = romSplit - dictionarySize - 2;
+    const int outputBytesPerSplit = romSplit - dictionarySize - 2;
     // Number of bytes of input consumed for each total romSplit of output
-    int inputBytesPerSplit = outputBytesPerSplit * chunkSize;
+    const int inputBytesPerSplit = outputBytesPerSplit * chunkSize;
 
     // We need to allocate the result buffer
     // We have as many dictionaries as there are split parts
-    int numSplits = dataLength / inputBytesPerSplit + (dataLength % inputBytesPerSplit == 0 ? 0 : 1);
+    const int numSplits = dataLength / inputBytesPerSplit + (dataLength % inputBytesPerSplit == 0 ? 0 : 1);
     // And the data is crunched by a factor of the chunk size
     destLength = dataLength / chunkSize + numSplits * (dictionarySize + 2);
-    auto pResult = new uint8_t[destLength];
-    auto pDest = pResult; // Working pointer
+    const auto pResult = new uint8_t[destLength];
+    const auto pDest = pResult; // Working pointer
 
     printf(
         "Compressing %d bytes to %d chunks, total %d bytes (%.2f%% compression)\n",
@@ -1093,7 +1089,7 @@ uint8_t* vectorPack(PackingType packing, uint8_t* pData, int dataLength, int rom
     while (chunksRemaining > 0)
     {
         printf("Processing %3.2f%%\r", std::abs(100 - 100.0 * chunksRemaining * chunkSize / dataLength));
-        int chunksForThisSplit = std::min(chunksRemaining, outputBytesPerSplit);
+        const int chunksForThisSplit = std::min(chunksRemaining, outputBytesPerSplit);
         chunksRemaining -= chunksForThisSplit;
 
         switch (packing)
@@ -1122,7 +1118,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
     {
         throw std::invalid_argument("Invalid number of inputs per output");
     }
-    int frequency = cpuFrequency * ratio / (dt1 + dt2 + dt3);
+    const int frequency = cpuFrequency * ratio / (dt1 + dt2 + dt3);
     if (frequency == 0)
     {
         throw std::invalid_argument("Invalid frequency");
@@ -1251,7 +1247,7 @@ public:
 
     std::string getString(const std::string& name, const std::string& defaultValue)
     {
-        std::map<std::string, std::string>::const_iterator it = _args.find(name);
+        const auto it = _args.find(name);
         if (it == _args.end())
         {
             return defaultValue;
@@ -1261,12 +1257,12 @@ public:
 
     int getInt(const std::string& name, uint32_t defaultValue)
     {
-        std::map<std::string, std::string>::const_iterator it = _args.find(name);
+        const auto it = _args.find(name);
         if (it == _args.end())
         {
             return defaultValue;
         }
-        return atoi(it->second.c_str());
+        return std::strtod(it->second.c_str(), nullptr);
     }
 
     bool exists(const std::string& name) const
@@ -1283,19 +1279,19 @@ int main(int argc, char** argv)
         Args args(argc, argv);
 
         auto filename = args.getString("filename", "");
-        auto romSplit = args.getInt("r", 0) * 1024;
-        auto saveInternal = args.exists("si");
-        auto packingType = (PackingType)args.getInt("p", (int)PackingType::RLE);
-        auto ratio = args.getInt("rto", 1);
-        auto interpolation = (InterpolationType)args.getInt("i", (int)InterpolationType::Lagrange11);
-        auto costFunction = args.getInt("c", 2);
-        auto cpuFrequency = args.getInt("cpuf", 3579545);
-        auto amplitude = args.getInt("a", 115);
-        auto dt1 = args.getInt("dt1", 0);
-        auto dt2 = args.getInt("dt2", 0);
-        auto dt3 = args.getInt("dt3", 0);
-        auto chip = (Chip)args.getInt("chip", (int)Chip::SN76489);
-        auto precision = (DataPrecision)args.getInt("precision", (int)DataPrecision::Float);
+        const auto romSplit = args.getInt("r", 0) * 1024;
+        const auto saveInternal = args.exists("si");
+        const auto packingType = (PackingType)args.getInt("p", (int)PackingType::RLE);
+        const auto ratio = args.getInt("rto", 1);
+        const auto interpolation = (InterpolationType)args.getInt("i", (int)InterpolationType::Lagrange11);
+        const auto costFunction = args.getInt("c", 2);
+        const auto cpuFrequency = args.getInt("cpuf", 3579545);
+        const auto amplitude = args.getInt("a", 115);
+        const auto dt1 = args.getInt("dt1", 0);
+        const auto dt2 = args.getInt("dt2", 0);
+        const auto dt3 = args.getInt("dt3", 0);
+        const auto chip = (Chip)args.getInt("chip", (int)Chip::SN76489);
+        const auto precision = (DataPrecision)args.getInt("precision", (int)DataPrecision::Float);
 
         if (filename.empty())
         {

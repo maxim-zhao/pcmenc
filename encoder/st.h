@@ -78,10 +78,10 @@ typedef struct st_effect *eff_t;
 
 typedef struct 
 {
-    char    *name;                  /* effect name */
+    const char *name;                  /* effect name */
     unsigned int flags;
 
-    int (*getopts)(eff_t effp, int argc, char **argv);
+    int (*getopts)(eff_t effp, int argc, const char **argv);
     int (*start)(eff_t effp);
     int (*flow)(eff_t effp, st_sample_t *ibuf, st_sample_t *obuf,
                 st_size_t *isamp, st_size_t *osamp);
@@ -111,7 +111,7 @@ struct st_effect
 int st_updateeffect(eff_t effp, st_signalinfo_t *in, st_signalinfo_t *out, 
                     int effect_mask);
 
-int st_resample_getopts(eff_t effp, int n, char **argv);
+int st_resample_getopts(eff_t effp, int n, const char **argv);
 int st_resample_start(eff_t effp);
 int st_resample_flow(eff_t effp, st_sample_t *ibuf, st_sample_t *obuf, 
                      st_size_t *isamp, st_size_t *osamp);
