@@ -58,12 +58,6 @@ PSGInitEnd:
 retn
 .ends
 
-.section "Mapper detection" force
-.repeat 2000
-ld ($ffff),a
-.endr
-.ends
-
 .section "player" align 256
 .include "replayer_core_vector_rto3_44010Hz.asm"
 ;.include "replayer_core_packed_rto3_44011Hz.asm"
