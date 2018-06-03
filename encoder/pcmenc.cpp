@@ -1,6 +1,7 @@
 /*****************************************************************************
 **
 ** Copyright (C) 2006 Arturo Ragozini, Daniel Vik
+** Modified by Maxim 2016-2017.
 **
 **  This software is provided 'as-is', without any express or implied
 **  warranty.  In no event will the authors be held liable for any damages
