@@ -56,7 +56,7 @@ enum class PackingType
     ChannelVolByte = 3,
     PackedVol = 4,
     Vector6 = 5,
-    Vector3 = 6
+    Vector4 = 6
 };
 
 enum class InterpolationType
@@ -1058,8 +1058,8 @@ uint8_t* vectorPack(PackingType packing, uint8_t* pData, int dataLength, int rom
         chunkSize = 6; // 6 nibbles = 3 bytes
         dictionarySize = 256 * 3; // 3 bytes per dictionary entry
         break;
-    case PackingType::Vector3:
-        chunkSize = 3; // 3 nibbles = 1.5 bytes, padded to 2
+    case PackingType::Vector4:
+        chunkSize = 4; // 4 nibbles = 2 bytes
         dictionarySize = 256 * 2; // 2 bytes per dictionary entry
         break;
     default: 
@@ -1094,8 +1094,8 @@ uint8_t* vectorPack(PackingType packing, uint8_t* pData, int dataLength, int rom
 
         switch (packing)
         {
-        case PackingType::Vector3:
-            vectorConvertChunk<3>(pDest, pData, dictionarySize, chunksForThisSplit);
+        case PackingType::Vector4:
+            vectorConvertChunk<4>(pDest, pData, dictionarySize, chunksForThisSplit);
             break;
         case PackingType::Vector6:
             vectorConvertChunk<6>(pDest, pData, dictionarySize, chunksForThisSplit);
@@ -1192,7 +1192,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
         destBuffer = chVolPack(packingType, binBuffer, binSize, romSplit, destLength);
         break;
     case PackingType::Vector6:
-    case PackingType::Vector3:
+    case PackingType::Vector4:
         destBuffer = vectorPack(packingType, binBuffer, binSize, romSplit, destLength);
         break;
     default:
