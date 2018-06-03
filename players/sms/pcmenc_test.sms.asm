@@ -37,7 +37,7 @@ PSGInitEnd:
   otir
 
   ; invoke the player
-  ld b,1049/16 ; bank count - can make it correct if wanted
+  ld b,0/16 ; bank count - first number is size in KB
   ld a,1 ; first bank
 -:push bc
     ld ($ffff),a
@@ -58,7 +58,14 @@ PSGInitEnd:
 retn
 .ends
 
-.section "player" free
-.include "replayer_core_packed_rto3_maxHz.asm"
+.section "Mapper detection" force
+.repeat 2000
+ld ($ffff),a
+.endr
+.ends
+
+.section "player" align 256
+.include "replayer_core_vector_rto3_44010Hz.asm"
+;.include "replayer_core_packed_rto3_44011Hz.asm"
 .ends
 
