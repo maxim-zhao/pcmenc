@@ -34,6 +34,7 @@
 #include <sstream>
 #include <map>
 #include <ctime>
+#include <execution>
 
 #include "st.h"
 #include "dkm.hpp"
@@ -986,67 +987,101 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncre
     return destBuffer;
 }
 
-// Worker method for vector compressing a chunk of data
-// Needs to be templated on the chunk size because of the use of std::array below
-template<size_t N>
-void vectorConvertChunk(uint8_t* pDest, const uint8_t* pSource, const int dictionarySize, int chunksForThisSplit)
+class VectorChunk
 {
-    // Convert to the C++ types needed for dkm, also moves the binBuffer pointer on
-    // We convert the nibbles to floats, as it needs to maintain an average...
-    std::vector<std::array<float, N>> chunks(chunksForThisSplit);
-    for (auto j = 0; j < chunksForThisSplit; ++j)
+    uint8_t* _pDest;
+    const uint8_t* _pSource;
+    int _dictionarySize;
+    int _chunksForThisSplit;
+    PackingType _packing;
+
+public:
+    VectorChunk(uint8_t* pDest, const uint8_t* pData, int dictionarySize, int chunksForThisSplit, PackingType packing)
+        : _pDest(pDest), _pSource(pData), _dictionarySize(dictionarySize), _chunksForThisSplit(chunksForThisSplit),
+          _packing(packing)
     {
-        for (auto k = 0U; k < N; ++k)
-        {
-            chunks[j][k] = pSource[k];
-        }
-        pSource += N;
     }
 
-    // Vectorise - this is the majority of the time taken
-    auto clusters = dkm::kmeans_lloyd(chunks, 256);
-
-    // Emit the dictionaries
-    for (const auto& cluster : std::get<0>(clusters))
+private:
+    // Worker method for vector compressing a chunk of data
+    // Needs to be templated on the chunk size because of the use of std::array below
+    template <size_t N>
+    void pack()
     {
-        auto p = pDest;
-        if (N % 2 == 0)
+        // Convert to the C++ types needed for dkm, also moves the binBuffer pointer on
+        // We convert the nibbles to floats, as it needs to maintain an average...
+        std::vector<std::array<float, N>> chunks(_chunksForThisSplit);
+        for (auto j = 0; j < _chunksForThisSplit; ++j)
         {
-            // Even N: we just loop over pairs
-            for (auto i = 0U; i < N; i += 2)
+            for (auto k = 0U; k < N; ++k)
             {
-                *p = std::lroundf(cluster[i]) << 4 | std::lroundf(cluster[i+1]);
-                p += 256;
+                chunks[j][k] = _pSource[k];
             }
+            _pSource += N;
         }
-        else
-        {
-            // Odd N : we need to pack the last one specially
-            for (auto i = 0U; i < N-1; i += 2)
-            {
-                *p = std::lroundf(cluster[i]) << 4 | std::lroundf(cluster[i+1]);
-                p += 256;
-            }
-            *p = std::lroundf(cluster[N-1]) << 4;
-        }
-        ++pDest;
-    }
-    //The pointer is left at the end of the first dictionary, we move it past the rest
-    pDest += dictionarySize - 256;
-    // And the index count
-    *pDest++ = chunksForThisSplit & 0xff;
-    *pDest++ = (uint8_t)(chunksForThisSplit >> 8);
 
-    auto indices = std::get<1>(clusters);
-    // Emit the samples
-    for (const unsigned& index : indices)
-    {
-        *pDest++ = (uint8_t)index;
+        // Vectorise - this is the majority of the time taken
+        auto clusters = dkm::kmeans_lloyd(chunks, 256);
+
+        // Emit the dictionaries
+        for (const auto& cluster : std::get<0>(clusters))
+        {
+            auto p = _pDest;
+            if constexpr (N % 2 == 0)
+            {
+                // Even N: we just loop over pairs
+                for (auto i = 0U; i < N; i += 2)
+                {
+                    *p = (uint8_t)(std::lroundf(cluster[i]) << 4 | std::lroundf(cluster[i + 1]));
+                    p += 256;
+                }
+            }
+            else
+            {
+                // Odd N : we need to pack the last one specially
+                for (auto i = 0U; i < N - 1; i += 2)
+                {
+                    *p = (uint8_t)(std::lroundf(cluster[i]) << 4 | std::lroundf(cluster[i + 1]));
+                    p += 256;
+                }
+                *p = (uint8_t)(std::lroundf(cluster[N - 1]) << 4);
+            }
+            ++_pDest;
+        }
+        //The pointer is left at the end of the first dictionary, we move it past the rest
+        _pDest += _dictionarySize - 256;
+        // And the index count
+        *_pDest++ = _chunksForThisSplit & 0xff;
+        *_pDest++ = (uint8_t)(_chunksForThisSplit >> 8);
+
+        auto indices = std::get<1>(clusters);
+        // Emit the samples
+        for (const unsigned& index : indices)
+        {
+            *_pDest++ = (uint8_t)index;
+        }
     }
-}
+
+public:
+    void pack()
+    {
+        switch (_packing)
+        {
+        case PackingType::Vector4:
+            pack<4>();
+            break;
+        case PackingType::Vector6:
+            pack<6>();
+            break;
+        default: 
+            throw std::invalid_argument("Invalid packing type");
+        }
+        printf(".");
+    }
+};
 
 // Encodes the buffer using vector compression
-uint8_t* vectorPack(PackingType packing, uint8_t* pData, int dataLength, int romSplit, int& destLength)
+uint8_t* vectorPack(const PackingType packing, uint8_t* pData, const int dataLength, const int romSplit, int& destLength)
 {
     // Compute the result size
     int chunkSize; // Bytes compressed at a time
@@ -1076,35 +1111,37 @@ uint8_t* vectorPack(PackingType packing, uint8_t* pData, int dataLength, int rom
     // And the data is crunched by a factor of the chunk size
     destLength = dataLength / chunkSize + numSplits * (dictionarySize + 2);
     const auto pResult = new uint8_t[destLength];
-    const auto pDest = pResult; // Working pointer
+    auto pDest = pResult; // Working pointer
 
     printf(
-        "Compressing %d bytes to %d chunks, total %d bytes (%.2f%% compression)\n",
+        "Compressing %d bytes to %d banks (%d command dictionary entries), total %d bytes (%.2f%% compression)",
         dataLength,
         numSplits,
+        chunkSize,
         destLength,
         (dataLength - destLength) * 100.0/dataLength);
 
     int chunksRemaining = dataLength / chunkSize; // Truncates! We can't encode partial chunks at EOF
+
+    // We first build a collection of work to do...
+    std::vector<VectorChunk> chunks;
     while (chunksRemaining > 0)
     {
-        printf("Processing %3.2f%%\r", std::abs(100 - 100.0 * chunksRemaining * chunkSize / dataLength));
         const int chunksForThisSplit = std::min(chunksRemaining, outputBytesPerSplit);
         chunksRemaining -= chunksForThisSplit;
-
-        switch (packing)
-        {
-        case PackingType::Vector4:
-            vectorConvertChunk<4>(pDest, pData, dictionarySize, chunksForThisSplit);
-            break;
-        case PackingType::Vector6:
-            vectorConvertChunk<6>(pDest, pData, dictionarySize, chunksForThisSplit);
-            break;
-        default: 
-            throw std::invalid_argument("Invalid packing type");
-        }
+        chunks.emplace_back(pDest, pData, dictionarySize, chunksForThisSplit, packing);
+        pDest += romSplit;
+        pData += chunksForThisSplit * chunkSize;
     }
-    printf("Processing %3.2f%%\n", 100.0);
+    // Then we do it in parallel for maximum speed
+    std::for_each(
+        std::execution::par_unseq, 
+        chunks.begin(), chunks.end(), 
+        [](auto&& chunk)
+        {
+            chunk.pack();
+        });
+    printf("done\n");
     return pResult;
 }
 
@@ -1262,7 +1299,7 @@ public:
         {
             return defaultValue;
         }
-        return std::strtod(it->second.c_str(), nullptr);
+        return std::strtol(it->second.c_str(), nullptr, 10);
     }
 
     bool exists(const std::string& name) const
