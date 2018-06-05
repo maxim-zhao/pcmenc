@@ -38,6 +38,7 @@
 
 #include "st.h"
 #include "dkm.hpp"
+#include <stdlib.h>
 
 // Minimum allowed frequency difference for not doing frequency conversion
 #define MIN_ALLOWED_FREQ_DIFF 0.005
@@ -416,53 +417,69 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
 {
     // Costs of previous sample
     T lastCosts[256];
-    std::fill_n(lastCosts, 256, (T)0);
-    // Starting point for min-cost search for each target
-    T maxCosts[256];
-    std::fill_n(maxCosts, 256, std::numeric_limits<T>::max());
+    std::fill_n(lastCosts, _countof(lastCosts), (T)0);
+    // Costs for each sample
+    T sampleCosts[256];
+    // These hold some state between each iteration of the loop below...
     int samplePreceding[256];
     int sampleUpdate[256];
 
+    // For each sample...
     for (int t = 0; t < numOutputs; t++)
     {
+        // Get the value and channel index
         T sample = targetOutput[t];
         int channel = t % 3;
 
-        // For each preceding two 4-bit values, we calculate the minimum cost for this sample
-        T sampleCosts[256];
-        std::copy(maxCosts, maxCosts + 256, sampleCosts);
+        // Initialise our best values to the maximum
+        std::fill_n(sampleCosts, 256, std::numeric_limits<T>::max());
 
+        // We print progress every 4K samples
         if (t % 4096 == 0)
         {
             printf("Processing %3.2f%%\r", 100.0 * t / numOutputs);
         }
 
+        // We iterate over the whole "volume cube"...
         for (int i = 0; i < 16 * 16 * 16; ++i)
         {
+            // We can treat i as three indices x, y, z into the volume cube.
+            // (It's not stored as a 3D array, maybe for performance?)
+            // For each sample, we wan to pick the "best" update to make to our channel
+            // for a given pair of values of the other two.
+            // This is determined as the cumulative error so far for a given route to the current sample,
+            // plus the cost function applied to the deviation in output for a given new vale, multiplied by its duration.
+
+            // We transform i to some x, y, z values...
+            int xy = i >> 4;
+            int yz = i & 0xff;
+
+            // We get the value that will be obtained...
             T effectiveVolume = effectiveVolumesCube[i];
 
-            // We can imagine the index i as actually three channel indexes xyz on the cube
-            // We are going to judge the quality of z assuming the other two channels are x and y
-            int xy = i >> 4;
+            // ...compute the difference between it and what's wanted...
+            T deviation = sample - effectiveVolume;
 
-            // This is the delta between what we might achieve and what we want
-            T normVal = sample - effectiveVolume;
-            // This is our judgement of how bad that is, plus the cost
-            // of the previous sample (assuming it lead to xy)
-            T cost = lastCosts[xy] + dt[channel] * Cost<T, costFunction>(normVal);
+            // ...convert to a cost...
+            T cost = dt[channel] * Cost<T, costFunction>(deviation);
 
-            // We select the minimum costs for each yz
-            int yz = i & 0xff;
-            if (cost < sampleCosts[yz])
+            // ...and add it on to the cumulative cost
+            T cumulativeCost = lastCosts[xy] + cost;
+
+            // If it is better than what was computed so far, for a given yz pair, remember it
+            // TODO: the result is somewhat linear, we could binary search for it?
+            if (cumulativeCost < sampleCosts[yz])
             {
-                sampleCosts[yz] = cost;
+                sampleCosts[yz] = cumulativeCost;
                 // And we store the xy and z that go with it
                 samplePreceding[yz] = xy;
                 sampleUpdate[yz] = i & 0x0f;
             }
         }
 
-        // Then we copy the yz costs as the xy for the next sample
+        // We now have the lowest-total-cost values for each yz pair.
+
+        // We copy the yz costs as the xy for the next sample
         std::copy(sampleCosts, sampleCosts + 256, lastCosts);
 
         // And record the other stuff that went with it
@@ -475,7 +492,7 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
 
     printf("Processing %3.2f%%\n", 100.0);
 
-    // We select the smallest total cost
+    // Now our state arrays contain the final total costs, so we can select the lowest
     auto minIndex = (int)std::distance(lastCosts, std::min_element(lastCosts, lastCosts + 256));
 
     printf("The cost metric in Viterbi is about %3.3f\n", lastCosts[minIndex]);
@@ -489,10 +506,10 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
 // The output buffer needs to be three times the size of the input buffer
 //
 template <typename T>
-uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples, int length,
+uint8_t* encode(int samplesPerTriplet, double amplitude, const double* samples, int length,
     int idt1, int idt2, int idt3,
     InterpolationType interpolation, int costFunction,
-    bool saveInternal, int& binSize, const double vol[16])
+    bool saveInternal, int& resultLength, const double volumes[16])
 {
     const clock_t start = clock();
 
@@ -582,9 +599,9 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     for (int i = 0; i < 16 * 16 * 16; ++i)
     {
         effectiveVolumesCube[i] = (T)(
-            vol[(i >> 0) & 0xf] +
-            vol[(i >> 4) & 0xf] +
-            vol[(i >> 8) & 0xf]);
+            volumes[(i >> 0) & 0xf] +
+            volumes[(i >> 4) & 0xf] +
+            volumes[(i >> 8) & 0xf]);
     }
 
     // For each of 256 "preceding values" we hold a value per sample
@@ -625,12 +642,17 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     const auto precedingValuesPath = new uint8_t[numOutputs]; // This is only for the benefit of some analysis below
     const auto updateValuesPath = new uint8_t[numOutputs]; // This is the final result, a series of one-channel updates
 
+    // Set the final values
     precedingValuesPath[numOutputs - 1] = precedingValues[minIndex][numOutputs - 1];
     updateValuesPath[numOutputs - 1] = updateValues[minIndex][numOutputs - 1];
+    // And populate backwards
     for (int t = numOutputs - 2; t >= 0; --t)
     {
+        // Get the xy values for the sample after this one
         const int xy = precedingValuesPath[t + 1];
+        // Obtain the two preceding nibbles for that, so we can iterate backwards
         precedingValuesPath[t] = precedingValues[xy][t];
+        // And the z value that goes with them, which is what we really want
         updateValuesPath[t] = updateValues[xy][t];
     }
 
@@ -641,7 +663,8 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
         delete[] updateValues[i];
     }
 
-    // Then we build a resultant actual-values series by walking the selected path forwards again
+    // Then we build a resultant actual-values series by walking the selected path forwards again 
+    // and building the volume array (i.e. achieved output values)
     auto* achievedOutput = new T[numOutputs];
 
     for (int t = 0; t < numOutputs; ++t)
@@ -673,6 +696,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
     const double  var = en - mi*mi * 3 / numOutputs;
     printf("SNR is about %3.2f\n", 10 * log10(var / er));
 
+    // We can now delete the data used to compute everything except the final result
     delete[] normalisedInputs;
     delete[] targetOutput;
     delete[] precedingValuesPath;
@@ -687,7 +711,7 @@ uint8_t* viterbi(int samplesPerTriplet, double amplitude, const double* samples,
         secondsElapsed,
         length / secondsElapsed);
 
-    binSize = numOutputs;
+    resultLength = numOutputs;
     return updateValuesPath;
 }
 
@@ -1201,10 +1225,10 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
     switch (precision)
     {
     case DataPrecision::Float:
-        binBuffer = viterbi<float>(ratio, amplitude, samples, samplesLen, dt1, dt2, dt3, interpolation, costFunction, saveInternal, binSize, vol);
+        binBuffer = encode<float>(ratio, amplitude, samples, samplesLen, dt1, dt2, dt3, interpolation, costFunction, saveInternal, binSize, vol);
         break;
     case DataPrecision::Double:
-        binBuffer = viterbi<double>(ratio, amplitude, samples, samplesLen, dt1, dt2, dt3, interpolation, costFunction, saveInternal, binSize, vol);
+        binBuffer = encode<double>(ratio, amplitude, samples, samplesLen, dt1, dt2, dt3, interpolation, costFunction, saveInternal, binSize, vol);
         break;
     default:
         throw std::invalid_argument("Invalid data precision");
