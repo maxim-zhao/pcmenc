@@ -38,7 +38,6 @@
 
 #include "st.h"
 #include "dkm.hpp"
-#include <stdlib.h>
 
 // Minimum allowed frequency difference for not doing frequency conversion
 #define MIN_ALLOWED_FREQ_DIFF 0.005
@@ -417,7 +416,7 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
 {
     // Costs of previous sample
     T lastCosts[256];
-    std::fill_n(lastCosts, _countof(lastCosts), (T)0);
+    std::fill_n(lastCosts, sizeof(lastCosts)/sizeof(T), (T)0);
     // Costs for each sample
     T sampleCosts[256];
     // These hold some state between each iteration of the loop below...
@@ -500,110 +499,9 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
     return minIndex;
 }
 
-
-//////////////////////////////////////////////////////////////////////////////
-// Encodes sample data to be played on the PSG.
-// The output buffer needs to be three times the size of the input buffer
-//
-template <typename T>
-uint8_t* encode(int samplesPerTriplet, double amplitude, const double* samples, int length,
-    int idt1, int idt2, int idt3,
-    InterpolationType interpolation, int costFunction,
-    bool saveInternal, int& resultLength, const double volumes[16])
+template<typename T>
+uint8_t* encode_exhaustive(int numOutputs, int costFunction, T* targetOutput, T* effectiveVolumesCube, T dt[3], bool saveInternal)
 {
-    const clock_t start = clock();
-
-    // We normalise the inputs to the range 0..1, 
-    // plus add some padding on the end to avoid needing range checks at that end
-    auto* normalisedInputs = new T[length + 256];
-
-    const auto minmax = std::minmax_element(samples, samples + length);
-    const auto inputMin = *minmax.first;
-    const auto inputMax = *minmax.second;
-
-    for (int i = 0; i < length; i++)
-    {
-        normalisedInputs[i] = (T)(amplitude * (samples[i] - inputMin) / (inputMax - inputMin));
-    }
-    std::fill_n(normalisedInputs + length, 256, normalisedInputs[length - 1]);
-
-    // Normalise the relative cycle times to fractions of a triplet time
-    T dt[3];
-    uint32_t cyclesPerTriplet = idt1 + idt2 + idt3;
-    dt[0] = (T)idt1 / cyclesPerTriplet;
-    dt[1] = (T)idt2 / cyclesPerTriplet;
-    dt[2] = (T)idt3 / cyclesPerTriplet;
-
-    if (samplesPerTriplet < 1)
-    {
-        samplesPerTriplet = 1;
-    }
-
-    printf("Viterbi SNR optimization:\n");
-    printf("   %d input samples per PSG triplet output\n", samplesPerTriplet);
-    printf("   dt1 = %d  (Normalized: %1.3f)\n", idt1, dt[0]);
-    printf("   dt2 = %d  (Normalized: %1.3f)\n", idt2, dt[1]);
-    printf("   dt3 = %d  (Normalized: %1.3f)\n", idt3, dt[2]);
-    printf("   Using %zu bytes data precision\n", sizeof(T));;
-
-    // Generate a modified version of the inputs to account for any
-    // jitter in the output timings, by sampling at the relative offsets
-    int numOutputs = (length + samplesPerTriplet - 1) / samplesPerTriplet * 3;
-    auto* targetOutput = new T[numOutputs];
-
-    int numLeft;
-    int numRight;
-
-    switch (interpolation)
-    {
-    case InterpolationType::Linear:
-        printf("   Resampling using Linear interpolation\n");
-        numLeft = 0;
-        numRight = 1;
-        break;
-    case InterpolationType::Quadratic:
-        printf("   Resampling using Quadratic interpolation\n");
-        numLeft = 0;
-        numRight = 2;
-        break;
-    case InterpolationType::Lagrange11:
-        printf("   Resampling using Lagrange interpolation on 11 points\n");
-        numLeft = 5;
-        numRight = 5;
-        break;
-    default:
-        throw std::invalid_argument("Invalid interpolation type");
-    }
-
-    for (int i = 0; i < numOutputs / 3; i++)
-    {
-        int t0 = (samplesPerTriplet * i);
-        T t1 = (samplesPerTriplet * (i + dt[0]));
-        T t2 = (samplesPerTriplet * (i + dt[0] + dt[1]));
-        T dt1 = t1 - (int)t1;
-        T dt2 = t2 - (int)t2;
-
-        targetOutput[3 * i + 0] = normalisedInputs[t0];
-        targetOutput[3 * i + 1] = interpolate(normalisedInputs, (int)t1, dt1, numLeft, numRight);
-        targetOutput[3 * i + 2] = interpolate(normalisedInputs, (int)t2, dt2, numLeft, numRight);
-    }
-
-    if (saveInternal)
-    {
-        dump("targetOutput.bin", (uint8_t*)targetOutput, numOutputs * sizeof(T));
-        dump("normalisedInputs.bin", (uint8_t*)normalisedInputs, (length * 256) * sizeof(T));
-    }
-
-    // Build the set of effective volumes for all possible channel settings
-    T effectiveVolumesCube[16 * 16 * 16];
-    for (int i = 0; i < 16 * 16 * 16; ++i)
-    {
-        effectiveVolumesCube[i] = (T)(
-            volumes[(i >> 0) & 0xf] +
-            volumes[(i >> 4) & 0xf] +
-            volumes[(i >> 8) & 0xf]);
-    }
-
     // For each of 256 "preceding values" we hold a value per sample
     uint8_t* precedingValues[256];
     // For each of 256 "update values" we hold a value per sample
@@ -697,10 +595,198 @@ uint8_t* encode(int samplesPerTriplet, double amplitude, const double* samples, 
     printf("SNR is about %3.2f\n", 10 * log10(var / er));
 
     // We can now delete the data used to compute everything except the final result
-    delete[] normalisedInputs;
-    delete[] targetOutput;
     delete[] precedingValuesPath;
     delete[] achievedOutput;
+
+    return updateValuesPath;
+}
+
+template<typename T>
+uint8_t* encode_tree(int numOutputs, int costFunction, T* targetOutput, T* effectiveVolumesCube, T dt[3], bool saveInternal)
+{
+    // Allocate stuff
+    auto result = new uint8_t[numOutputs];
+    auto bestPath = new int[numOutputs];
+    auto currentPath = new int[numOutputs]; // Holds x,y,z values
+    int currentPathIndex = 0;
+    auto bestPathCosts = new T[numOutputs];
+    auto currentPathCosts = new T[numOutputs];
+    T bestTotalPathCost = std::numeric_limits<T>::max();
+
+    std::fill(currentPath, currentPath + numOutputs, 0);
+
+    // Depth first search for the lowest total cost path through the data
+    for (;;)
+    {
+        // Visit each node in turn until we get to the end, computing the cost
+        while (currentPathIndex != numOutputs)
+        {
+            T desiredSample = targetOutput[currentPathIndex];
+            T achievedSample = effectiveVolumesCube[currentPath[currentPathIndex]];
+            T cumulativeCost = currentPathCosts[currentPathIndex] + 
+                Cost<T, 2>(achievedSample - desiredSample) * dt[currentPathIndex % 3]; // TODO: other cost functions
+            currentPathCosts[currentPathIndex] = cumulativeCost;
+            if (cumulativeCost > bestTotalPathCost)
+            {
+                // We want to abandon this subtree
+                break;
+            }
+            ++currentPathIndex;
+            if (currentPathIndex < numOutputs)
+            {
+                // New item cost = previous item cost
+                currentPathCosts[currentPathIndex] = currentPathCosts[currentPathIndex - 1];
+                // New item state = previous item state shifted and masked
+                currentPath[currentPathIndex] = (currentPath[currentPathIndex - 1] << 4) & 0xff0;
+            }
+        }
+
+        // If it's a full path, compare the total cost to the best so far
+        if (currentPathIndex == numOutputs && currentPathCosts[numOutputs - 1] < bestTotalPathCost)
+        {
+            bestTotalPathCost = currentPathCosts[numOutputs - 1];
+            memcpy_s(bestPath, sizeof bestPath, currentPath, sizeof currentPath);
+        }
+
+        // Then walk back to the previous one with a non-finished state
+        for (--currentPathIndex; currentPathIndex >= 0; --currentPathIndex)
+        {
+            if ((currentPath[currentPathIndex] & 0xf) == 0xf)
+            {
+                continue;
+            }
+            ++currentPath[currentPathIndex];
+        }
+        if (currentPathIndex == -1)
+        {
+            // We are done
+            break;
+        }
+    }
+    // Copy path into result
+    for (int i = 0; i < numOutputs; ++i)
+    {
+        result[i] = bestPath[i] & 0xf;
+    }
+
+
+    // Delete stuff
+    delete [] currentPathCosts;
+    delete [] bestPathCosts;
+    delete [] currentPath;
+    delete [] bestPath;
+    return result;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Encodes sample data to be played on the PSG.
+// The output buffer needs to be three times the size of the input buffer
+//
+template <typename T>
+uint8_t* encode(int samplesPerTriplet, double amplitude, const double* samples, int length,
+    int idt1, int idt2, int idt3,
+    InterpolationType interpolation, int costFunction,
+    bool saveInternal, int& resultLength, const double volumes[16])
+{
+    const clock_t start = clock();
+
+    // We normalise the inputs to the range 0..1, 
+    // plus add some padding on the end to avoid needing range checks at that end
+    auto* normalisedInputs = new T[length + 256];
+
+    const auto minmax = std::minmax_element(samples, samples + length);
+    const auto inputMin = *minmax.first;
+    const auto inputMax = *minmax.second;
+
+    for (int i = 0; i < length; i++)
+    {
+        normalisedInputs[i] = (T)(amplitude * (samples[i] - inputMin) / (inputMax - inputMin));
+    }
+    std::fill_n(normalisedInputs + length, 256, normalisedInputs[length - 1]);
+
+    // Normalise the relative cycle times to fractions of a triplet time
+    T dt[3];
+    uint32_t cyclesPerTriplet = idt1 + idt2 + idt3;
+    dt[0] = (T)idt1 / cyclesPerTriplet;
+    dt[1] = (T)idt2 / cyclesPerTriplet;
+    dt[2] = (T)idt3 / cyclesPerTriplet;
+
+    if (samplesPerTriplet < 1)
+    {
+        samplesPerTriplet = 1;
+    }
+
+    printf("Viterbi SNR optimization:\n");
+    printf("   %d input samples per PSG triplet output\n", samplesPerTriplet);
+    printf("   dt1 = %d  (Normalized: %1.3f)\n", idt1, dt[0]);
+    printf("   dt2 = %d  (Normalized: %1.3f)\n", idt2, dt[1]);
+    printf("   dt3 = %d  (Normalized: %1.3f)\n", idt3, dt[2]);
+    printf("   Using %zu bytes data precision\n", sizeof(T));;
+
+    // Generate a modified version of the inputs to account for any
+    // jitter in the output timings, by sampling at the relative offsets
+    int numOutputs = (length + samplesPerTriplet - 1) / samplesPerTriplet * 3;
+    auto* targetOutput = new T[numOutputs];
+
+    int numLeft;
+    int numRight;
+
+    switch (interpolation)
+    {
+    case InterpolationType::Linear:
+        printf("   Resampling using Linear interpolation\n");
+        numLeft = 0;
+        numRight = 1;
+        break;
+    case InterpolationType::Quadratic:
+        printf("   Resampling using Quadratic interpolation\n");
+        numLeft = 0;
+        numRight = 2;
+        break;
+    case InterpolationType::Lagrange11:
+        printf("   Resampling using Lagrange interpolation on 11 points\n");
+        numLeft = 5;
+        numRight = 5;
+        break;
+    default:
+        throw std::invalid_argument("Invalid interpolation type");
+    }
+
+    for (int i = 0; i < numOutputs / 3; i++)
+    {
+        int t0 = (samplesPerTriplet * i);
+        T t1 = (samplesPerTriplet * (i + dt[0]));
+        T t2 = (samplesPerTriplet * (i + dt[0] + dt[1]));
+        T dt1 = t1 - (int)t1;
+        T dt2 = t2 - (int)t2;
+
+        targetOutput[3 * i + 0] = normalisedInputs[t0];
+        targetOutput[3 * i + 1] = interpolate(normalisedInputs, (int)t1, dt1, numLeft, numRight);
+        targetOutput[3 * i + 2] = interpolate(normalisedInputs, (int)t2, dt2, numLeft, numRight);
+    }
+
+    if (saveInternal)
+    {
+        dump("targetOutput.bin", (uint8_t*)targetOutput, numOutputs * sizeof(T));
+        dump("normalisedInputs.bin", (uint8_t*)normalisedInputs, (length + 256) * sizeof(T));
+    }
+
+    delete [] normalisedInputs;
+
+    // Build the set of effective volumes for all possible channel settings
+    T effectiveVolumesCube[16 * 16 * 16];
+    for (int i = 0; i < 16 * 16 * 16; ++i)
+    {
+        effectiveVolumesCube[i] = (T)(
+            (volumes[(i >> 0) & 0xf] +
+            volumes[(i >> 4) & 0xf] +
+            volumes[(i >> 8) & 0xf]) / 3.0);
+    }
+
+    uint8_t* result = encode_exhaustive(numOutputs, costFunction, targetOutput, effectiveVolumesCube, dt, saveInternal);
+        //encode_tree(numOutputs, costFunction, targetOutput, effectiveVolumesCube, dt, saveInternal);
+
+    delete[] targetOutput;
 
     const clock_t end = clock();
     const double secondsElapsed = (1.0 * end - start) / CLOCKS_PER_SEC;
@@ -712,7 +798,7 @@ uint8_t* encode(int samplesPerTriplet, double amplitude, const double* samples, 
         length / secondsElapsed);
 
     resultLength = numOutputs;
-    return updateValuesPath;
+    return result;
 }
 
 
