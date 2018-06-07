@@ -5,7 +5,7 @@
 ;
 ; pcmenc -p 6 -rto 3 -dt1 81 -dt2 81 -dt3 82 file.wav
 ;
-; and optionally -r to split sample into blocks for rom replayer
+; and optionally -r <n> to split sample into n KB blocks
 ;
 
 ; There is one channel updates per underlying sample.
@@ -50,15 +50,16 @@ PLAY_SAMPLE:
   ; hl' points to the vector tables
   ; de' points to the data -> PSG command lookup tables above
   ; b' is a copy of the initial value of h
+  ; c' is a the high byte for the start of the PSG command tables
   
-  ; save high byte of hl to b' (we require l is zero)
+  ; save high bytes of hl and >srl4_table_0 to b' and c' (we require both are aligned to 256 bytes)
   ld a,h
   exx
     ld b,a
+    ld c,>srl4_table_0
   exx
   
   ; move to start of data
-  inc h
   inc h
   inc h
   ; read counter
@@ -69,88 +70,198 @@ PLAY_SAMPLE:
   
 ; Could try to optimise this for space, but why bother as we have 1.5KB of tables :)
 .macro Delay args n
-  .if n == 59
-  call Delay59
+  .if n == 4
+  nop
+  .else
+  .if n == 48
+  call Delay48
   .else
   .if n == 49
   call Delay49
   .else
-  .if n == 40
-  call Delay40
+  .if n == 59
+  call Delay59
   .else
-  .fail "Unhandled delay"
+  .if n == 60
+  call Delay60
+  .else
+  .printt "Unhandled Delay "
+  .printv dec n
+  .printt "\n"
+  .fail
+  .endif
+  .endif
   .endif
   .endif
   .endif
 .endm
 
+; Our data is compressed in runs of 4 nibbles (2 bytes). 
+; We need to emit in runs of 3 bytes (6 outputs), so we 
+; need to unroll to 6 bytes to make it align:
+;
+; Get index
+; Look up in vector table
+; Emit high nibble for channel 0
+; Emit low nibble for channel 1
+; Next byte of vector
+; Emit high nibble for channel 2
+; Emit low nibble for channel 0
+; Check count
+; Get index
+; Look up in vector table
+; Emit high nibble for channel 1
+; Emit low nibble for channel 2
+; Next byte of vector
+; Emit high nibble for channel 0
+; Emit low nibble for channel 1
+; Check count
+; Get index
+; Look up in vector table
+; Emit high nibble for channel 2
+; Emit low nibble for channel 0
+; Next byte of vector
+; Emit high nibble for channel 1
+; Emit low nibble for channel 2
+; Check count
+; Loop
+
 -:
-                  ; 22 for loop
-  nop             ; 4 - delay 8 cycles
-  nop             ; 4
+                  ; 34 for loop
+  ; Get index
   ld a,(hl)       ; 7
   exx             ; 4
-    ; Look up in table(s)
+    ; Look up in vector table
     ld l,a        ; 4
     ld h,b        ; 4
-  
-    ; Get byte from table (1/3)
-    ld d,>srl4_table_0 ; 7
     ld e,(hl)     ; 7
-    
-    ; Emit first
+    ; Emit high nibble for channel 0
+    ld d,c        ; 4
     ld a,(de)     ; 7
-    out ($7f),a    ; 11 -> 81 cycles
-
-    ; Second
+    out ($7f),a    ; 11 -> 82 cycles
+    
+    ; Emit low nibble for channel 1
     Delay           59
     inc d         ; 4
     ld a,(de)     ; 7
-    out ($7f),a    ; 11 -> 81
-    
-    ; Byte 2/3
-    Delay           49
+    out ($7f),a   ; 11 -> 81
+
+    ; Next byte of vector
+    Delay           48
     inc h         ; 4
+    ; Emit high nibble for channel 2
     inc d         ; 4
     ld e,(hl)     ; 7
     ld a,(de)     ; 7
-    out ($7f),a    ; 11 -> 82
-    
-    Delay           59
+    out ($7f),a    ; 11 -> 81
+
+    ; Emit low nibble for channel 0
+    Delay           60
     inc d         ; 4
     ld a,(de)     ; 7
     out ($7f),a    ; 11 -> 81
 
-    ; Byte 3/3
-    Delay           49
-    inc h         ; 4
-    inc d         ; 4
-    ld e,(hl)     ; 7
-    ld a,(de)     ; 7
-    out ($7f),a    ; 11 -> 81
-    
-    Delay           40
-    ; Loop work 
+    ; Check count
+    Delay           4
   exx             ; 4
   inc hl          ; 6
   dec bc          ; 6
-  exx             ; 4
-    inc d         ; 4
-    ld a,(de)     ; 7
-    out ($7f),a    ; 11 -> 82
-
-  exx             ; 4
-  ; check count 
   ld a,b          ; 4
   or c            ; 4
+  ret z           ; 5
+  ; Get index
+  ld a,(hl)       ; 7
+  exx             ; 4
+    ; Look up in vector table
+    ld l,a        ; 4
+    ld h,b        ; 4
+    ; Emit high nibble for channel 1
+    inc d         ; 4
+    ld e,(hl)     ; 7
+    ld a,(de)     ; 7
+    out ($7f),a    ; 11 -> 81 cycles
+    
+    ; Emit low nibble for channel 2
+    Delay           59
+    inc d         ; 4
+    ld a,(de)     ; 7
+    out ($7f),a   ; 11 -> 81
+    
+    ; Next byte of vector
+    Delay           49
+    inc h         ; 4
+    ld e,(hl)     ; 7
+    ; Emit high nibble for channel 0
+    ld d,c        ; 4
+    ld a,(de)     ; 7
+    out ($7f),a   ; 11 -> 82
+    
+    ; Emit low nibble for channel 1
+    Delay           59
+    inc d         ; 4
+    ld a,(de)     ; 7
+    out ($7f),a    ; 11 -> 81
+    
+    ; Check count
+    Delay           4
+  exx             ; 4
+  inc hl          ; 6
+  dec bc          ; 6
+  ld a,b          ; 4
+  or c            ; 4
+  ret z           ; 5
+  ; Get index
+  ld a,(hl)       ; 7
+  exx             ; 4
+    ; Look up in vector table
+    ld l,a        ; 4
+    ld h,b        ; 4
+    ld e,(hl)     ; 7
+    ; Emit high nibble for channel 2
+    inc d         ; 4
+    ld a,(de)     ; 7
+    out ($7f),a    ; 11 -> 81 cycles
+
+    ; Emit low nibble for channel 0
+    Delay           59
+    inc d         ; 4
+    ld a,(de)     ; 7
+    out ($7f),a   ; 11 -> 82
+    
+    ; Next byte of vector
+    Delay           48
+    inc h         ; 4
+    ld e,(hl)     ; 7
+    ; Emit high nibble for channel 1
+    inc d         ; 4
+    ld a,(de)     ; 7
+    out ($7f),a   ; 11 -> 81
+    
+    ; Emit low nibble for channel 2
+    Delay           59
+    inc d         ; 4
+    ld a,(de)     ; 7
+    out ($7f),a   ; 11 -> 81
+    
+    ; Check count
+  exx             ; 4
+  inc hl          ; 6
+  dec bc          ; 6
+  ld a,b          ; 4
+  or c            ; 4
+  ; Loop
   jp nz,-         ; 10
   ret
-  
+
+; Delay helpers
+Delay60:
+  jr Delay48 ; 12
 Delay59:
-  jp +    ; 10
+  jp Delay49 ; 10
 Delay49:
-+:ld a,i  ; 9
-Delay40:
-  ld a,(Delay40) ; 13
-  ret     ; 27 for call and ret
+  jp +    ; 10
+Delay48:
+  ld a,i  ; 9
++:jr +    ; 12
++:ret     ; 27 for call and ret
   

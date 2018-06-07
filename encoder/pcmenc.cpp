@@ -412,19 +412,19 @@ T Cost(T value)
 }
 
 template <typename T, int costFunction>
-int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint8_t* precedingValues[256], uint8_t* updateValues[256], T* dt)
+int viterbi_inner(T* targetOutput, unsigned int numOutputs, T* effectiveVolumesCube, uint8_t* precedingValues[256], uint8_t* updateValues[256], T* dt)
 {
     // Costs of previous sample
     T lastCosts[256];
-    std::fill_n(lastCosts, sizeof(lastCosts)/sizeof(T), (T)0);
+    std::fill_n(lastCosts, sizeof(lastCosts)/sizeof(T), (T)0.0);
     // Costs for each sample
     T sampleCosts[256];
     // These hold some state between each iteration of the loop below...
-    int samplePreceding[256];
-    int sampleUpdate[256];
+    unsigned int samplePreceding[256];
+    unsigned int sampleUpdate[256];
 
     // For each sample...
-    for (int t = 0; t < numOutputs; t++)
+    for (unsigned int t = 0; t < numOutputs; t++)
     {
         // Get the value and channel index
         T sample = targetOutput[t];
@@ -439,19 +439,21 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
             printf("Processing %3.2f%%\r", 100.0 * t / numOutputs);
         }
 
+        T duration = dt[channel];
+
         // We iterate over the whole "volume cube"...
-        for (int i = 0; i < 16 * 16 * 16; ++i)
+        for (unsigned int i = 0; i < 16 * 16 * 16; ++i)
         {
             // We can treat i as three indices x, y, z into the volume cube.
             // (It's not stored as a 3D array, maybe for performance?)
             // For each sample, we wan to pick the "best" update to make to our channel
             // for a given pair of values of the other two.
             // This is determined as the cumulative error so far for a given route to the current sample,
-            // plus the cost function applied to the deviation in output for a given new vale, multiplied by its duration.
+            // plus the cost function applied to the deviation in output for a given new value, multiplied by its duration.
 
             // We transform i to some x, y, z values...
-            int xy = i >> 4;
-            int yz = i & 0xff;
+            unsigned int xy = i >> 4;
+            unsigned int yz = i & 0xff;
 
             // We get the value that will be obtained...
             T effectiveVolume = effectiveVolumesCube[i];
@@ -466,7 +468,7 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
             T cumulativeCost = lastCosts[xy] + cost;
 
             // If it is better than what was computed so far, for a given yz pair, remember it
-            // TODO: the result is somewhat linear, we could binary search for it?
+            // TODO: the result is monotonic (?), we could binary search for it?
             if (cumulativeCost < sampleCosts[yz])
             {
                 sampleCosts[yz] = cumulativeCost;
@@ -500,7 +502,7 @@ int viterbi_inner(T* targetOutput, int numOutputs, T* effectiveVolumesCube, uint
 }
 
 template<typename T>
-uint8_t* encode_exhaustive(int numOutputs, int costFunction, T* targetOutput, T* effectiveVolumesCube, T dt[3], bool saveInternal)
+uint8_t* encode(int numOutputs, int costFunction, T* targetOutput, T* effectiveVolumesCube, T dt[3], bool saveInternal)
 {
     // For each of 256 "preceding values" we hold a value per sample
     uint8_t* precedingValues[256];
@@ -599,83 +601,6 @@ uint8_t* encode_exhaustive(int numOutputs, int costFunction, T* targetOutput, T*
     delete[] achievedOutput;
 
     return updateValuesPath;
-}
-
-template<typename T>
-uint8_t* encode_tree(int numOutputs, int costFunction, T* targetOutput, T* effectiveVolumesCube, T dt[3], bool saveInternal)
-{
-    // Allocate stuff
-    auto result = new uint8_t[numOutputs];
-    auto bestPath = new int[numOutputs];
-    auto currentPath = new int[numOutputs]; // Holds x,y,z values
-    int currentPathIndex = 0;
-    auto bestPathCosts = new T[numOutputs];
-    auto currentPathCosts = new T[numOutputs];
-    T bestTotalPathCost = std::numeric_limits<T>::max();
-
-    std::fill(currentPath, currentPath + numOutputs, 0);
-
-    // Depth first search for the lowest total cost path through the data
-    for (;;)
-    {
-        // Visit each node in turn until we get to the end, computing the cost
-        while (currentPathIndex != numOutputs)
-        {
-            T desiredSample = targetOutput[currentPathIndex];
-            T achievedSample = effectiveVolumesCube[currentPath[currentPathIndex]];
-            T cumulativeCost = currentPathCosts[currentPathIndex] + 
-                Cost<T, 2>(achievedSample - desiredSample) * dt[currentPathIndex % 3]; // TODO: other cost functions
-            currentPathCosts[currentPathIndex] = cumulativeCost;
-            if (cumulativeCost > bestTotalPathCost)
-            {
-                // We want to abandon this subtree
-                break;
-            }
-            ++currentPathIndex;
-            if (currentPathIndex < numOutputs)
-            {
-                // New item cost = previous item cost
-                currentPathCosts[currentPathIndex] = currentPathCosts[currentPathIndex - 1];
-                // New item state = previous item state shifted and masked
-                currentPath[currentPathIndex] = (currentPath[currentPathIndex - 1] << 4) & 0xff0;
-            }
-        }
-
-        // If it's a full path, compare the total cost to the best so far
-        if (currentPathIndex == numOutputs && currentPathCosts[numOutputs - 1] < bestTotalPathCost)
-        {
-            bestTotalPathCost = currentPathCosts[numOutputs - 1];
-            memcpy_s(bestPath, sizeof bestPath, currentPath, sizeof currentPath);
-        }
-
-        // Then walk back to the previous one with a non-finished state
-        for (--currentPathIndex; currentPathIndex >= 0; --currentPathIndex)
-        {
-            if ((currentPath[currentPathIndex] & 0xf) == 0xf)
-            {
-                continue;
-            }
-            ++currentPath[currentPathIndex];
-        }
-        if (currentPathIndex == -1)
-        {
-            // We are done
-            break;
-        }
-    }
-    // Copy path into result
-    for (int i = 0; i < numOutputs; ++i)
-    {
-        result[i] = bestPath[i] & 0xf;
-    }
-
-
-    // Delete stuff
-    delete [] currentPathCosts;
-    delete [] bestPathCosts;
-    delete [] currentPath;
-    delete [] bestPath;
-    return result;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -783,8 +708,7 @@ uint8_t* encode(int samplesPerTriplet, double amplitude, const double* samples, 
             volumes[(i >> 8) & 0xf]) / 3.0);
     }
 
-    uint8_t* result = encode_exhaustive(numOutputs, costFunction, targetOutput, effectiveVolumesCube, dt, saveInternal);
-        //encode_tree(numOutputs, costFunction, targetOutput, effectiveVolumesCube, dt, saveInternal);
+    uint8_t* result = encode(numOutputs, costFunction, targetOutput, effectiveVolumesCube, dt, saveInternal);
 
     delete[] targetOutput;
 

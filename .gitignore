@@ -95,3 +95,4 @@ pcmenc.VC.db
 *.zip
 *.wav
 *.pcmenc
+*.bin

@@ -37,7 +37,7 @@ PSGInitEnd:
   otir
 
   ; invoke the player
-  ld b,0/16 ; bank count - first number is size in KB
+  ld b,0/16 ; bank count - first number is size in KB or 0 for maximum (for testing, will play garbage at end)
   ld a,1 ; first bank
 -:push bc
     ld ($ffff),a
@@ -59,7 +59,7 @@ retn
 .ends
 
 .section "player" align 256
-.include "replayer_core_vector_rto3_44010Hz.asm"
+.include "replayer_core_p4_rto3_44010Hz.asm"
 ;.include "replayer_core_packed_rto3_44011Hz.asm"
 .ends
 
