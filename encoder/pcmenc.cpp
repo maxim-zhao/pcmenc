@@ -462,7 +462,7 @@ int viterbi_inner(T* targetOutput, unsigned int numOutputs, T* effectiveVolumesC
             T deviation = sample - effectiveVolume;
 
             // ...convert to a cost...
-            T cost = dt[channel] * Cost<T, costFunction>(deviation);
+            T cost = duration * Cost<T, costFunction>(deviation);
 
             // ...and add it on to the cumulative cost
             T cumulativeCost = lastCosts[xy] + cost;
@@ -1023,8 +1023,8 @@ uint8_t* rlePack(uint8_t* binBuffer, uint32_t length, int romSplit, int rleIncre
 
 class VectorChunk
 {
-    uint8_t* _pDest;
-    const uint8_t* _pSource;
+    uint8_t* const _pDest; // Destination buffer
+    const uint8_t* const _pSource;
     int _dictionarySize;
     int _chunksForThisSplit;
     PackingType _packing;
@@ -1037,30 +1037,56 @@ public:
     }
 
 private:
+    static void dumpPSGAsPCM(const std::string& filename, const uint8_t* pData, size_t size)
+    {
+        // Convert PSG commands back to a float waveform
+        float volumes[16];
+        for (int i = 0; i < 15; i++)
+        {
+            volumes[i] = powf(10.0f, -0.1f * i);
+        }
+        volumes[15] = 0.0;
+        const auto data = new float[size];
+        int channels[3] = {};
+        for (size_t i = 0; i < size; ++i)
+        {
+            channels[i % 3] = pData[i];
+            data[i] = (volumes[channels[0]] + volumes[channels[1]] + volumes[channels[2]]) / 1.5f - 1.0f;
+        }
+        // Save it to disk
+        ::dump(filename, (const uint8_t*)data, (int)size * sizeof(float));
+        delete [] data;
+    }
+
     // Worker method for vector compressing a chunk of data
     // Needs to be templated on the chunk size because of the use of std::array below
     template <size_t N>
     void pack()
     {
+        size_t sampleCount = _chunksForThisSplit * N;
+        dumpPSGAsPCM("chunk" + std::to_string((unsigned long long)_pSource) + ".bin", _pSource, sampleCount);
+
         // Convert to the C++ types needed for dkm, also moves the binBuffer pointer on
         // We convert the nibbles to floats, as it needs to maintain an average...
         std::vector<std::array<float, N>> chunks(_chunksForThisSplit);
+        const uint8_t* pSource = _pSource;
         for (auto j = 0; j < _chunksForThisSplit; ++j)
         {
-            for (auto k = 0U; k < N; ++k)
+            for (size_t k = 0; k < N; ++k)
             {
-                chunks[j][k] = _pSource[k];
+                chunks[j][k] = pSource[k];
             }
-            _pSource += N;
+            pSource += N;
         }
 
         // Vectorise - this is the majority of the time taken
         auto clusters = dkm::kmeans_lloyd(chunks, 256);
 
         // Emit the dictionaries
+        uint8_t* pDest = _pDest;
         for (const auto& cluster : std::get<0>(clusters))
         {
-            auto p = _pDest;
+            uint8_t* p = pDest;
             if constexpr (N % 2 == 0)
             {
                 // Even N: we just loop over pairs
@@ -1080,20 +1106,41 @@ private:
                 }
                 *p = (uint8_t)(std::lroundf(cluster[N - 1]) << 4);
             }
-            ++_pDest;
+            ++pDest;
         }
-        //The pointer is left at the end of the first dictionary, we move it past the rest
-        _pDest += _dictionarySize - 256;
-        // And the index count
-        *_pDest++ = _chunksForThisSplit & 0xff;
-        *_pDest++ = (uint8_t)(_chunksForThisSplit >> 8);
+
+        // We emit the index count after the dictionary
+        pDest = _pDest + _dictionarySize;
+        *pDest++ = _chunksForThisSplit & 0xff;
+        *pDest++ = (uint8_t)(_chunksForThisSplit >> 8);
 
         auto indices = std::get<1>(clusters);
-        // Emit the samples
+        // Followed by the indices
         for (const unsigned& index : indices)
         {
-            *_pDest++ = (uint8_t)index;
+            *pDest++ = (uint8_t)index;
         }
+
+        // Emit samples again, by reconstructing the buffer from the indices
+        auto* restored = new uint8_t[sampleCount];
+        pDest = restored;
+        auto* pVectors = _pDest;
+        auto* pIndices = _pDest + _dictionarySize + 2;
+        size_t indexCount = sampleCount / N;
+        for (size_t i = 0; i < indexCount; ++i)
+        {
+            const auto index = *pIndices++;
+            // We need to emit N bytes in N/2 chunks
+            for (size_t j = 0; j < N/2; ++j)
+            {
+                const auto pByte = pVectors + j * 256 + index;
+                const auto b = *pByte;
+                *pDest++ = b >> 4;
+                *pDest++ = b & 0xf;
+            }
+        }
+        dumpPSGAsPCM("chunk" + std::to_string((unsigned long long)_pSource) + ".reconstructed.bin", restored, sampleCount);
+        delete [] restored;
     }
 
 public:
@@ -1357,7 +1404,7 @@ int main(int argc, char** argv)
         const auto interpolation = (InterpolationType)args.getInt("i", (int)InterpolationType::Lagrange11);
         const auto costFunction = args.getInt("c", 2);
         const auto cpuFrequency = args.getInt("cpuf", 3579545);
-        const auto amplitude = args.getInt("a", 115);
+        const auto amplitude = args.getInt("a", 100);
         const auto dt1 = args.getInt("dt1", 0);
         const auto dt2 = args.getInt("dt2", 0);
         const auto dt3 = args.getInt("dt3", 0);
@@ -1396,7 +1443,7 @@ int main(int argc, char** argv)
                 "                    in each PSG triplet update.\n"
                 "\n"
                 "    -a <amplitude>  Overdrive amplitude adjustment\n"
-                "                        Default 115\n"
+                "                        Default 100\n"
                 "\n"
                 "    -rto <ratio>   Number of input samples per PSG triplet\n"
                 "                        Default: 1\n"
