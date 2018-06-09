@@ -15,10 +15,11 @@ The features I have added are:
   * BBC Micro
   * Lots of arcade games and esoteric home computers
 * Optimal bank packing
-* Player code for regular Z80 chips, targetting popular sampling rates and CPU clocks
+* Player code for regular Z80 chips, targeting popular sampling rates and CPU clocks
 * Some speedups, possibly MSVC specific
 * A 64-bit build to allow processing longer files (the process consumes huge amounts of RAM)
 * Support for packed 4-bit data, which often wins over RLE anyway
+* Support for vector packing (using https://github.com/genbattle/dkm)
 
 Usage
 -----
@@ -33,7 +34,7 @@ Then, ideally, find the commandline for conversion from the comments in the play
 pcmenc -dt1 81 -dt2 81 -dt3 81 -rto 3 -r 16 input.wav
 ```
 
-A file will be produced with the suffix `.pcmenc`, e.g. `input.wav.pcmenc`. Binary include it in your program and invoke your player code accpording to its comments, and marvel at the quality of the audio!
+A file will be produced with the suffix `.pcmenc`, e.g. `input.wav.pcmenc`. Binary include it in your program and invoke your player code according to its comments, and marvel at the quality of the audio!
 
 How it works
 ------------
@@ -43,8 +44,7 @@ How it works
 * Next, for each sample:
   * It iterates through all possible PSG volume states (including ones that are equivalent output but different channel values or ordering).
   * For each possible state of "the other two channels", it selects the value for "the third channel" which will minimise the total error between the final output and the desired output. This error is defined by a configurable cost metric (by default, the time-weighted sum of squares of the deviation).
-  * This is done in a way which requires 512 × (number of output values) bytes of memory, which may mean more memory than your computer has if the audio files are long - beware!
-* The alternative might be a depth-first search, some research is needed.
+  * This acts to reduce the search space from 16^(number of output values) - which it is not feasible to explore on a normal computer for data of much length - to merely 8192 × (number of output values). However, it also requires 512 × (number of output values) bytes of memory, which may mean more memory than your computer has if the audio files are long - beware!
 * The original authors describe it as a viterbi algorithm but I'm not sure it is...
 * Once this is done, it is able to select the final value with the minimum total error and back-track it to a series of values to produce this minimised error
 * The resulting stream is then passed into various packing methods to produce something amenable to use in real life:
