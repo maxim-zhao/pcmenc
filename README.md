@@ -19,7 +19,7 @@ The features I have added are:
 * Some speedups, possibly MSVC specific
 * A 64-bit build to allow processing longer files (the process consumes huge amounts of RAM)
 * Support for packed 4-bit data, which often wins over RLE anyway
-* Support for vector packing (using https://github.com/genbattle/dkm)
+* Support for vector packing (using https://github.com/genbattle/dkm) - which tends to produce much lower quality output, so it is not recommended
 
 Usage
 -----
