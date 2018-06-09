@@ -71,14 +71,29 @@ PLAY_SAMPLE:
   out ($7f),a     ; 11 -> 38
 .endm
 
+.macro colour
+.endm
+
 PsgLoop:
   PlayHi 0        ;  48 -> 82
 
   call Delay43    ;  43
   PlayLo 1        ;  38 -> 81
   
+.ifdef colours
+  ld a,$10
+  out ($bf),a
+  nop
+  GetHi           ; 30
+  out ($be),a     ; 11
+  inc (hl)        ; 11
+  dec (hl)        ; 11
+  or (2 << 5) | $90 ; 7
+  out ($7f),a     ; 11 -> 81
+.else
   call Delay33    ;  33
   PlayHi 2        ;  48 -> 81
+.endif
 
   dec bc          ;   6
   ld a,b          ;   4
@@ -90,8 +105,20 @@ PsgLoop:
   ld a,0          ;   7
   PlayLo 0        ;  38 -> 82
   
+.ifdef colours
+  ld a,$10
+  out ($bf),a
+  nop
+  GetHi           ; 30
+  out ($be),a     ; 11
+  inc (hl)        ; 11
+  dec (hl)        ; 11
+  or (1 << 5) | $90 ; 7
+  out ($7f),a     ; 11 -> 81
+.else
   call Delay33    ;  33
   PlayHi 1        ;  48 -> 81
+.endif
   
   call Delay43    ;  43
   PlayLo 2        ;  38 -> 81
