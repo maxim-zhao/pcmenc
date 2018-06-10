@@ -96,3 +96,4 @@ pcmenc.VC.db
 *.wav
 *.pcmenc
 *.bin
+*.bak

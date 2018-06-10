@@ -54,10 +54,21 @@ PLAY_SAMPLE:
 .endm             ; Total 30
 
 .macro GetLo
+.ifdef colours
+  ld a,$10        ; 7
+  out ($bf),a     ; 11
   ld a,(hl)       ; 7
   inc hl          ; 6
-  and $0f         ; 7
-.endm             ; Total 20
+  out ($be),a     ; 11
+  and $0f         ; 7 -> 49
+.else
+  push ix         ; 15 (time wasting)
+  pop ix          ; 14
+  ld a,(hl)       ; 7
+  inc hl          ; 6
+  and $0f         ; 7 -> 49
+.endif
+.endm             ; Total 49
 
 .macro PlayHi args channel
   GetHi           ; 30
@@ -66,62 +77,33 @@ PLAY_SAMPLE:
 .endm
 
 .macro PlayLo args channel
-  GetLo           ; 20
+  GetLo           ; 49
   or (channel << 5) | $90 ; 7
   out ($7f),a     ; 11 -> 38
-.endm
-
-.macro colour
 .endm
 
 PsgLoop:
   PlayHi 0        ;  48 -> 82
 
-  call Delay43    ;  43
-  PlayLo 1        ;  38 -> 81
+  call Delay32    ;  32
+  PlayLo 1        ;  49 -> 81
   
-.ifdef colours
-  ld a,$10
-  out ($bf),a
-  nop
-  GetHi           ; 30
-  out ($be),a     ; 11
-  inc (hl)        ; 11
-  dec (hl)        ; 11
-  or (2 << 5) | $90 ; 7
-  out ($7f),a     ; 11 -> 81
-.else
   call Delay33    ;  33
   PlayHi 2        ;  48 -> 81
-.endif
 
   dec bc          ;   6
   ld a,b          ;   4
   or c            ;   4
   ret z           ;   5
-  ; Delay 25, don't touch bchl
-  ld r,a          ;   9
-  ld r,a          ;   9
-  ld a,0          ;   7
-  PlayLo 0        ;  38 -> 82
+  jp +            ;  10
++:nop             ;   4
+  PlayLo 0        ;  49 -> 82
   
-.ifdef colours
-  ld a,$10
-  out ($bf),a
-  nop
-  GetHi           ; 30
-  out ($be),a     ; 11
-  inc (hl)        ; 11
-  dec (hl)        ; 11
-  or (1 << 5) | $90 ; 7
-  out ($7f),a     ; 11 -> 81
-.else
   call Delay33    ;  33
   PlayHi 1        ;  48 -> 81
-.endif
   
-  call Delay43    ;  43
-  PlayLo 2        ;  38 -> 81
+  call Delay32    ;  32
+  PlayLo 2        ;  49 -> 81
 
   jp +            ;  10 (mini-delay)
 +:dec bc          ;   6
@@ -137,3 +119,7 @@ Delay33:
   ; call      ; 17
   inc de      ;  6
   ret         ; 10
+Delay32:
+  ; call      ; 17
+  xor a       ;  4, sets z
+  ret z       ; 11

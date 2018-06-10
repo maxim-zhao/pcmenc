@@ -96,6 +96,9 @@ _End:
     pop af
   pop bc
   djnz -
+  
+  ; TODO: if in "colour" mode, show something on the screen (colours go to the border area/index $16)
+  ; So we could "window" over it, even with some "transparency"?
 
   ; loop forever
 -:jr -
