@@ -79,47 +79,77 @@ PLAY_SAMPLE:
 .macro PlayLo args channel
   GetLo           ; 49
   or (channel << 5) | $90 ; 7
-  out ($7f),a     ; 11 -> 38
+  out ($7f),a     ; 11 -> 67
 .endm
+82
+.macro Delay args n
+  .printt "Delay "
+  .printv dec n
+  .printt "\n"
+  .if n == 14
+  or 0    ; 7
+  or 0    ; 7
+  .else
+  .if n == 10
+  jp +
+  +:
+  .else
+  .if n == 8
+  ld a,a  ; 4
+  ld a,a  ; 4
+  .else
+  .if n == 4
+  ld a,a  ; 4
+  .else
+  .if n == 0
+  ; nothing :)
+  .else
+  .if n == 33
+  push af     ; 11
+  pop af      ; 10
+  bit 0,(hl)  ; 12
+  .else
+  .printt "Unhandled delay "
+  .printv dec n
+  .printt "\n"
+  .fail
+  .endif
+  .endif
+  .endif
+  .endif
+  .endif
+  .endif
+.endm
+
 
 PsgLoop:
   PlayHi 0        ;  48 -> 82
 
-  call Delay32    ;  32
-  PlayLo 1        ;  49 -> 81
+  Delay              81-67
+  PlayLo 1        ;  67       ; good
   
-  call Delay33    ;  33
-  PlayHi 2        ;  48 -> 81
-
-  dec bc          ;   6
+  Delay              81-6-4-4-11-48
+  dec bc          ;   6 ; We check the counter here because we are short of time on the next part
   ld a,b          ;   4
   or c            ;   4
+  push af         ;  11
+    PlayHi 2      ;  48 -> 81 ; bad
+
+    Delay            82-10-5-67
+  pop af          ;  10
   ret z           ;   5
-  jp +            ;  10
-+:nop             ;   4
-  PlayLo 0        ;  49 -> 82
+  PlayLo 0        ;  67 -> 82
   
-  call Delay33    ;  33
+  Delay              81-48
   PlayHi 1        ;  48 -> 81
   
-  call Delay32    ;  32
-  PlayLo 2        ;  49 -> 81
+  Delay              81-67
+  PlayLo 2        ;  67 -> 81
 
-  jp +            ;  10 (mini-delay)
-+:dec bc          ;   6
+  Delay               82-6-4-4-10-48
+  dec bc          ;   6
   ld a,b          ;   4
   or c            ;   4
   jp nz, PsgLoop  ;  10
 
   ret
-
-Delay43:
-  jp Delay33  ; 10
-Delay33:
-  ; call      ; 17
-  inc de      ;  6
-  ret         ; 10
-Delay32:
-  ; call      ; 17
-  xor a       ;  4, sets z
-  ret z       ; 11

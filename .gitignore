@@ -97,3 +97,5 @@ pcmenc.VC.db
 *.pcmenc
 *.bin
 *.bak
+*.png
+*.aplib
