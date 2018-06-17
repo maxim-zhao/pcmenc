@@ -1226,10 +1226,50 @@ uint8_t* vectorPack(const PackingType packing, uint8_t* pData, const int dataLen
     return pResult;
 }
 
+static void skewDown(double* pData, int sampleCount, int highPassShift)
+{
+    // Go forward and generate minimums with smooth return to zero
+    std::vector<double> offsets;
+    offsets.reserve(sampleCount);
+    double min = 0;
+    for (double* pSample = pData; pSample < pData + sampleCount; ++pSample)
+    {
+        double sample = *pData;
+        // Find the min of the current value and the low-pass max signal
+        min = std::min(min, sample);
+        offsets.push_back(min);
+        // Make the value decay to 0
+        min -= min / (1 << highPassShift);
+    }
+
+    // This will have produced steps downwards with slow return to 0,
+    // so we go backwards and add smooth returns to 0 in the other direction,
+    // and then scale and offset the sample to match
+    double* pSample = pData + sampleCount - 1;
+    for (int i = sampleCount - 1; i >= 0; --i)
+    {
+        double sample = *pSample;
+
+        min = std::min(min, sample);
+        min = std::min(min, offsets[i]);
+        offsets[i] = -min;
+
+        // Then offset the sample
+        double adjustedSample = sample - min;
+        // Every sample should be >0 now
+        assert(adjustedSample >= 0);
+        // Then scale down again
+        adjustedSample -= 1;
+
+        *pSample-- = adjustedSample;
+        min -= min / (1 << highPassShift);
+    }
+}
+
 // Converts a wav file to PSG binary format, including encoding
 void convertWav(const std::string& filename, bool saveInternal, int costFunction, InterpolationType interpolation,
     int cpuFrequency, int dt1, int dt2, int dt3,
-    int ratio, double amplitude, int romSplit, PackingType packingType, Chip chip, DataPrecision precision)
+    int ratio, double amplitude, int romSplit, PackingType packingType, Chip chip, DataPrecision precision, int smooth)
 {
     // Load samples from wav file
     if (ratio < 1)
@@ -1252,6 +1292,22 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
         throw std::runtime_error("Failed to load wav file");
     }
     printf("done\n");
+
+    if (saveInternal)
+    {
+        dump("samples.bin", (const uint8_t*)samples, samplesLen * sizeof(double));
+    }
+
+    if (smooth > 0)
+    {
+        printf("Skewing samples for better quality...");
+        skewDown(samples, samplesLen, smooth);
+        printf("done\n");
+    }
+    if (saveInternal)
+    {
+        dump("made_positive.bin", (const uint8_t*)samples, samplesLen * sizeof(double));
+    }
 
     // Do viterbi encoding
     double vol[16];
@@ -1410,6 +1466,7 @@ int main(int argc, char** argv)
         const auto dt3 = args.getInt("dt3", 0);
         const auto chip = (Chip)args.getInt("chip", (int)Chip::SN76489);
         const auto precision = (DataPrecision)args.getInt("precision", (int)DataPrecision::Float);
+        const auto smooth = args.getInt("smooth", 0);
 
         if (filename.empty())
         {
@@ -1441,6 +1498,10 @@ int main(int argc, char** argv)
                 "                    Note that the replayed sampling base period depends\n"
                 "                    on the replayer and how many samples it will play\n"
                 "                    in each PSG triplet update.\n"
+                "\n"
+                "    -smooth <amount>  Low-frequency skewing adjustment decay rate.\n"
+                "                        Default 0 = off\n"
+                "                        10 is suitable for 44kHz audio\n"
                 "\n"
                 "    -a <amplitude>  Overdrive amplitude adjustment\n"
                 "                        Default 100\n"
@@ -1477,7 +1538,7 @@ int main(int argc, char** argv)
             return 0;
         }
 
-        convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, ratio, (double)amplitude / 100, romSplit, packingType, chip, precision);
+        convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, ratio, (double)amplitude / 100, romSplit, packingType, chip, precision, smooth);
         return 1;
     }
     catch (std::exception& e)
