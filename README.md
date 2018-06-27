@@ -20,7 +20,7 @@ The features I have added are:
 * A 64-bit build to allow processing longer files (the process consumes huge amounts of RAM)
 * Support for packed 4-bit data, which often wins over RLE anyway
 * Support for vector packing (using https://github.com/genbattle/dkm) - which tends to produce much lower quality output, so it is not recommended
-* Support for skewing the sample to improve the potential resolution, as the output are non-linear. This is based on work by blargg in psg_to_wav.
+* Support for skewing the sample to improve the potential resolution, as the output are non-linear. This is based on work by blargg in [psg_to_wav](https://github.com/maxim-zhao/pcm_to_wav).
 
 Usage
 -----
