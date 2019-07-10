@@ -1,6 +1,8 @@
 pcmenc
 ======
 
+[![Build status](https://ci.appveyor.com/api/projects/status/777xka4fol7lbxa7?svg=true)](https://ci.appveyor.com/project/maxim-zhao/pcmenc)
+
 This is a clone of [pcmenc](http://www.dvik-joyrex.com/tools.html), a program which generates high-quality sample data plus matching assembly code players for MSX. 
 
 The features I have added are:
@@ -59,7 +61,7 @@ Original readme
 Here's the original README, some of which no longer applies:
 
 ``` 
-=================================================================
+  =================================================================
   PCMENC - The Encoder for Crystal Clear PSG samples - Version 0.01
   =================================================================
   
