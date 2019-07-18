@@ -170,11 +170,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Arga.cpp" />
+    <ClCompile Include="FileReader.cpp" />
     <ClCompile Include="pcmenc.cpp" />
     <ClCompile Include="resample.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Arga.h" />
     <ClInclude Include="dkm.hpp" />
+    <ClInclude Include="Endian.h" />
+    <ClInclude Include="FileReader.h" />
+    <ClInclude Include="FourCC.h" />
     <ClInclude Include="resampl.h" />
     <ClInclude Include="st.h" />
   </ItemGroup>
