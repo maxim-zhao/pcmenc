@@ -236,6 +236,10 @@ double* loadSamples(const std::string& filename, uint32_t wantedFrequency, size_
     }
     else
     {
+        printf(" *** WARNING ***\n"
+            " Input wave is too far from the target frequency and needs to be resampled.\n"
+            " Did you make a mistake with your commandline settings?\n"
+            " It's better to resample in a dedicated program for high quality results.\n");
         printf(" Resampling input wave from %dHz to %dHz...", samplesPerSec, wantedFrequency);
         retSamples = resample(tempSamples, sampleNum, samplesPerSec, wantedFrequency, count);
     }
@@ -594,17 +598,17 @@ uint8_t* encode(
     switch (interpolation)
     {
     case InterpolationType::Linear:
-        printf("   Resampling using Linear interpolation\n");
+        printf("   Resampling using Linear interpolation...");
         numLeft = 0;
         numRight = 1;
         break;
     case InterpolationType::Quadratic:
-        printf("   Resampling using Quadratic interpolation\n");
+        printf("   Resampling using Quadratic interpolation...");
         numLeft = 0;
         numRight = 2;
         break;
     case InterpolationType::Lagrange11:
-        printf("   Resampling using Lagrange interpolation on 11 points\n");
+        printf("   Resampling using Lagrange interpolation on 11 points...");
         numLeft = 5;
         numRight = 5;
         break;
@@ -625,10 +629,12 @@ uint8_t* encode(
         targetOutput[3 * i + 2] = interpolate(normalisedInputs, (int)t2, dt2, numLeft, numRight);
     }
 
+    printf(" done (%zu output points)\n", numOutputs);
+
     if (saveInternal)
     {
         dump("targetOutput.bin", (uint8_t*)targetOutput, numOutputs * sizeof(T));
-        dump("normalisedInputs.bin", (uint8_t*)normalisedInputs, (length + 256) * sizeof(T));
+        dump("normalisedInputs.bin", (uint8_t*)normalisedInputs, (length + 256u) * sizeof(T));
     }
 
     delete [] normalisedInputs;
@@ -790,36 +796,65 @@ uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, const size_t sourc
     uint8_t* pDest = result;
     size_t totalPadding = 0;
     unsigned int bankCount = 0;
+
+    printf("Packing data with ");
     if (romSplit == 0)
     {
-        chVolPackChunk(pDest, pSource, sourceLength / 3, std::numeric_limits<int>::max(), packingType);
+        printf("no split");
     }
     else
     {
-        size_t tripletCount = sourceLength / 3;
-        while (tripletCount > 0)
-        {
-            // Pack a bank
-            ++bankCount;
-            const auto pDestBefore = pDest;
-            const size_t tripletsConsumed = chVolPackChunk(pDest, pSource, tripletCount, romSplit, packingType);
-            tripletCount -= tripletsConsumed;
-            pSource += tripletsConsumed * 3;
-            if (tripletCount > 0)
-            {
-                // Add padding if needed, but not on the last chunk
-                const auto bytesEmitted = pDest - pDestBefore;
-                const auto padding = romSplit - bytesEmitted;
-                totalPadding += padding;
-                for (size_t i = 0; i < padding; ++i)
-                {
-                    *pDest++ = 0;
-                }
-            }
-        };
+        printf("splits at %zuKB boundaries", romSplit / 1024);
     }
+    switch (packingType)
+    {
+    case PackingType::VolByte: 
+        // ReSharper disable once StringLiteralTypo
+        printf(", as raw PSG attenuations %%----aaaa\n"); 
+        break;
+    case PackingType::ChannelVolByte:
+        // ReSharper disable once StringLiteralTypo
+        printf(", as channel/attenuation packed bytes %%cc00aaaa\n"); 
+        break;
+    case PackingType::PackedVol:
+        // ReSharper disable once StringLiteralTypo
+        printf(", as packed volume pairs %%aaaabbbb\n"); 
+        break;
+    default: 
+        throw std::invalid_argument("Invalid packing type");
+    }
+
+    if (romSplit == 0)
+    {
+        chVolPackChunk(pDest, pSource, sourceLength / 3, std::numeric_limits<int>::max(), packingType);
+        destLength = pDest - result;
+        printf("Packed as %zu bytes of data\n", destLength);
+        return result;
+    }
+    
+    size_t tripletCount = sourceLength / 3;
+    while (tripletCount > 0)
+    {
+        // Pack a bank
+        ++bankCount;
+        const auto pDestBefore = pDest;
+        const size_t tripletsConsumed = chVolPackChunk(pDest, pSource, tripletCount, romSplit, packingType);
+        tripletCount -= tripletsConsumed;
+        pSource += tripletsConsumed * 3u;
+        if (tripletCount > 0)
+        {
+            // Add padding if needed, but not on the last chunk
+            const auto bytesEmitted = pDest - pDestBefore;
+            const auto padding = romSplit - bytesEmitted;
+            totalPadding += padding;
+            for (size_t i = 0; i < padding; ++i)
+            {
+                *pDest++ = 0;
+            }
+        }
+    };
     destLength = pDest - result;
-    printf("Saved as %zu bytes of data (%d banks with %zu bytes padding)\n",
+    printf("Packed as %zu bytes of data (%d banks with %zu bytes padding)\n",
         destLength,
         bankCount,
         totalPadding);
@@ -1227,7 +1262,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
     {
         throw std::runtime_error("Failed to load wav file");
     }
-    printf("done\n");
+    printf("done; %zu samples\n", samplesLen);
 
     if (saveInternal)
     {
@@ -1245,7 +1280,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
         dump("made_positive.bin", (const uint8_t*)samples, samplesLen * sizeof(double));
     }
 
-    // Do viterbi encoding
+    // Build the volume table
     double vol[16];
     switch (chip)
     {
@@ -1269,6 +1304,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
         throw std::invalid_argument("Invalid chip");
     }
 
+    // Encode
     size_t binSize;
     uint8_t* binBuffer;
     switch (precision)
@@ -1283,11 +1319,9 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
         throw std::invalid_argument("Invalid data precision");
     }
 
-    // RLE encode the buffer. Either as one consecutive RLE encoded
-    // buffer, or as 8kB small buffers, each RLE encoded with header.
+    // Pack
     uint8_t* destBuffer;
     size_t destLength;
-
     switch (packingType)
     {
     case PackingType::FourBitRle:
@@ -1310,7 +1344,7 @@ void convertWav(const std::string& filename, bool saveInternal, int costFunction
     }
     delete[] binBuffer;
 
-    // Save the encoded buffer
+    // Save the encoded and packed buffer
     saveEncodedBuffer(filename + ".pcmenc", destBuffer, destLength);
     delete[] destBuffer;
 }
