@@ -49,7 +49,7 @@ PLAY_SAMPLE:
   inc hl
   ld c, $7f ; for out (c),r
 
-  ; We hae two halves to the loop, due to the lack of symmetry between
+  ; We have two halves to the loop, due to the lack of symmetry between
   ; the nibbles used each time. We also unroll half of a loop,
   ; in order to help equalise the loops (pairing the expensive
   ; jump with the less costly data retrieval).
