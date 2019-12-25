@@ -51,6 +51,17 @@
  */
 
 #include <math.h>
+
+#define __STDC_WANT_LIB_EXT1__ 1
+#include <stdio.h>
+
+#ifdef _MSC_VER
+// Assumg sscanf_s exists.
+#else
+#define sscanf_s sscanf
+#endif
+
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include "st.h"
