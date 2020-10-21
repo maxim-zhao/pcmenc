@@ -40,7 +40,7 @@
 #include "Endian.h"
 #include "FileReader.h"
 #include "FourCC.h"
-#include "Arga.h"
+#include "Args.h"
 
 // Minimum allowed frequency difference for not doing frequency conversion
 constexpr auto minimum_allowed_frequency_difference = 0.005;

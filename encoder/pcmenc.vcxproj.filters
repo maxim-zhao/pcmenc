@@ -24,7 +24,7 @@
     <ClCompile Include="FileReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Arga.cpp">
+    <ClCompile Include="Args.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -47,7 +47,7 @@
     <ClInclude Include="FourCC.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Arga.h">
+    <ClInclude Include="Args.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
