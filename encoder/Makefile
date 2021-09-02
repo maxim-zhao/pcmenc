@@ -5,7 +5,7 @@ CXXFLAGS ?= -std=c++17 -O2 -Wall
 
 #LDFLAGS = -ltbb
 
-pcmenc: pcmenc.o resample.o FileReader.o Arga.o
+pcmenc: pcmenc.o resample.o FileReader.o Args.o
 	g++ $(CXXFLAGS) $? -o $@ -ltbb
 
 
