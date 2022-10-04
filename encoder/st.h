@@ -76,7 +76,7 @@ typedef struct  st_signalinfo
 
 typedef struct st_effect *eff_t;
 
-typedef struct 
+typedef struct
 {
     const char *name;                  /* effect name */
     unsigned int flags;
@@ -108,12 +108,12 @@ struct st_effect
 };
 
 
-int st_updateeffect(eff_t effp, st_signalinfo_t *in, st_signalinfo_t *out, 
+int st_updateeffect(eff_t effp, st_signalinfo_t *in, st_signalinfo_t *out,
                     int effect_mask);
 
 int st_resample_getopts(eff_t effp, int n, const char **argv);
 int st_resample_start(eff_t effp);
-int st_resample_flow(eff_t effp, st_sample_t *ibuf, st_sample_t *obuf, 
+int st_resample_flow(eff_t effp, st_sample_t *ibuf, st_sample_t *obuf,
                      st_size_t *isamp, st_size_t *osamp);
 int st_resample_drain(eff_t effp, st_sample_t *obuf, st_size_t *osamp);
 int st_resample_stop(eff_t effp);

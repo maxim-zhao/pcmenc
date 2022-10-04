@@ -1,0 +1,17 @@
+
+[*]
+
+# ReSharper properties
+resharper_cpp_align_multiline_argument = false
+resharper_cpp_align_multiline_parameter = false
+resharper_cpp_max_line_length = 194
+resharper_cpp_use_indent_from_vs = false
+resharper_empty_block_style = multiline
+resharper_function_definition_return_type_style = on_single_line
+resharper_line_break_after_colon_in_member_initializer_lists = on_single_line
+resharper_member_initializer_list_style = line_break
+resharper_simple_block_style = line_break
+resharper_simple_case_statement_style = line_break
+resharper_space_within_initializer_braces = true
+resharper_toplevel_function_definition_return_type_style = on_single_line
+resharper_wrap_enumeration_style = chop_always

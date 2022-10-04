@@ -280,7 +280,7 @@ static T interpolate(const T* data, int index, T dt, int numLeft, int numRight)
     return result;
 }
 
-// Nasty stuff to get a compile-time-optimised cost function implementation 
+// Nasty stuff to get a compile-time-optimised cost function implementation
 // (to avoid branching in the inner loop). Because C++ does not allow partial
 // function template specialisation, we have to redirect via a templated "impl".
 // These should all inline nicely.
@@ -336,10 +336,10 @@ T computeCost(T value)
 
 template <typename T, int CostFunction>
 int viterbiInner(
-    T* targetOutput, size_t numOutputs, 
-    T* effectiveVolumesCube, 
-    uint8_t* precedingValues[256], 
-    uint8_t* updateValues[256], 
+    T* targetOutput, size_t numOutputs,
+    T* effectiveVolumesCube,
+    uint8_t* precedingValues[256],
+    uint8_t* updateValues[256],
     T* dt)
 {
     // Costs of previous sample
@@ -491,7 +491,7 @@ uint8_t* encode(size_t numOutputs, unsigned int costFunction, T* targetOutput, T
         delete[] updateValues[i];
     }
 
-    // Then we build a resultant actual-values series by walking the selected path forwards again 
+    // Then we build a resultant actual-values series by walking the selected path forwards again
     // and building the volume array (i.e. achieved output values)
     auto* achievedOutput = new T[numOutputs];
 
@@ -535,20 +535,20 @@ uint8_t* encode(size_t numOutputs, unsigned int costFunction, T* targetOutput, T
 // The output buffer needs to be three times the size of the input buffer
 template <typename T>
 uint8_t* encode(
-    unsigned int samplesPerTriplet, 
-    double amplitude, 
-    const double* samples, 
+    unsigned int samplesPerTriplet,
+    double amplitude,
+    const double* samples,
     size_t length,
     unsigned int idt1, unsigned int idt2, unsigned int idt3,
-    InterpolationType interpolation, 
+    InterpolationType interpolation,
     unsigned int costFunction,
-    bool saveInternal, 
-    size_t& resultLength, 
+    bool saveInternal,
+    size_t& resultLength,
     const double volumes[16])
 {
     const auto start = clock();
 
-    // We normalise the inputs to the range 0..1, 
+    // We normalise the inputs to the range 0..1,
     // plus add some padding on the end to avoid needing range checks at that end
     auto* normalisedInputs = new T[length + 256U];
 
@@ -808,19 +808,19 @@ uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, const size_t sourc
     }
     switch (packingType)
     {
-    case PackingType::VolByte: 
+    case PackingType::VolByte:
         // ReSharper disable once StringLiteralTypo
-        printf(", as raw PSG attenuations %%----aaaa\n"); 
+        printf(", as raw PSG attenuations %%----aaaa\n");
         break;
     case PackingType::ChannelVolByte:
         // ReSharper disable once StringLiteralTypo
-        printf(", as channel/attenuation packed bytes %%cc00aaaa\n"); 
+        printf(", as channel/attenuation packed bytes %%cc00aaaa\n");
         break;
     case PackingType::PackedVol:
         // ReSharper disable once StringLiteralTypo
-        printf(", as packed volume pairs %%aaaabbbb\n"); 
+        printf(", as packed volume pairs %%aaaabbbb\n");
         break;
-    default: 
+    default:
         throw std::invalid_argument("Invalid packing type");
     }
 
@@ -831,7 +831,7 @@ uint8_t* chVolPack(PackingType packingType, uint8_t* pSource, const size_t sourc
         printf("Packed as %zu bytes of data\n", destLength);
         return result;
     }
-    
+
     size_t tripletCount = sourceLength / 3;
     while (tripletCount > 0)
     {
@@ -1125,7 +1125,7 @@ public:
         case PackingType::Vector6:
             pack<6>();
             break;
-        default: 
+        default:
             throw std::invalid_argument("Invalid packing type");
         }
         printf(".");
@@ -1141,7 +1141,7 @@ uint8_t* vectorPack(const PackingType packing, uint8_t* pData, const size_t data
 
     switch (packing)
     {
-    case PackingType::Vector6: 
+    case PackingType::Vector6:
         chunkSize = 6; // 6 nibbles = 3 bytes
         dictionarySize = 256 * 3; // 3 bytes per dictionary entry
         break;
@@ -1149,7 +1149,7 @@ uint8_t* vectorPack(const PackingType packing, uint8_t* pData, const size_t data
         chunkSize = 4; // 4 nibbles = 2 bytes
         dictionarySize = 256 * 2; // 2 bytes per dictionary entry
         break;
-    default: 
+    default:
         throw std::invalid_argument("Invalid packing type");
     }
     // Remaining number of output bytes per split
@@ -1187,8 +1187,8 @@ uint8_t* vectorPack(const PackingType packing, uint8_t* pData, const size_t data
     }
     // Then we do it in parallel for maximum speed
     std::for_each(
-        std::execution::par_unseq, 
-        chunks.begin(), chunks.end(), 
+        std::execution::par_unseq,
+        chunks.begin(), chunks.end(),
         [](auto&& chunk)
         {
             chunk.pack();
