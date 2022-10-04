@@ -1446,11 +1446,11 @@ int main(int argc, char** argv)
         }
 
         convertWav(filename, saveInternal, costFunction, interpolation, cpuFrequency, dt1, dt2, dt3, ratio, (double)amplitude / 100, romSplit, packingType, chip, precision, smooth);
-        return 1;
+        return 0;
     }
     catch (std::exception& e)
     {
         printf("%s\n", e.what());
-        return 0;
+        return 1;
     }
 }
