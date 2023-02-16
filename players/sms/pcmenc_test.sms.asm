@@ -15,7 +15,7 @@ banks 1
 
 .bank 0 slot 0
 
-.sdsctag 1.00,"psgenc test","","Maxim"
+.sdsctag 1.00,"pcmenc test","","Maxim"
 
 .section "PSG init data" free
 PSGInit:
@@ -30,7 +30,7 @@ PSGInitEnd:
   di
   im 1
   ld sp, $dff0
-  
+
   ; Init PSG
   ld hl,PSGInit
   ld bc,(PSGInitEnd-PSGInit)<<8 + $7f
@@ -56,7 +56,7 @@ _Data:
     ;    ||`------ Blank leftmost column for scrolling
     ;    |`------- Fix top 2 rows during horizontal scrolling
     ;    `-------- Fix right 8 columns during vertical scrolling
-    .db %10000100,$81
+    .db %10000000,$81
     ;     |||| |`- Zoomed sprites -> 16x16 pixels
     ;     |||| `-- Doubled sprites -> 2 tiles per sprite, 8x16
     ;     |||`---- 30 row/240 line mode
@@ -85,7 +85,7 @@ _End:
   .endif
   
   ; invoke the player
-  ld b,1734/16 ; bank count - first number is size in KB or 0 for maximum (for testing, will play garbage at end)
+  ld b,255 ; bank count - first number is size in KB or 0 for maximum (for testing, will play garbage at end)
   ld a,1 ; first bank
 -:push bc
     ld ($ffff),a
