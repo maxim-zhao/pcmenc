@@ -1,5 +1,6 @@
 version: 0.{build}
 image:
+- macos-monterey
 - Ubuntu2004
 - Visual Studio 2022
 configuration: Release
@@ -17,6 +18,15 @@ for:
 
   install:
   - sh: sudo apt install libtbb-dev --assume-yes --quiet
+  build_script:
+  - make --directory encoder
+-
+  matrix:
+    only:
+      - image: macos-monterey
+
+  install:
+  - sh: brew install tbb
   build_script:
   - make --directory encoder
 
