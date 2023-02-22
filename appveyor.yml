@@ -16,8 +16,6 @@ for:
       - image: Ubuntu
 
   install:
-  - sh: g++ --version
-  - sh: sudo apt update
   - sh: sudo apt install libtbb-dev -y
   build_script:
   - make --directory encoder
