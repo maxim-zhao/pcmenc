@@ -1,10 +1,23 @@
 version: 0.{build}
-image: Visual Studio 2022
+image:
+- Visual Studio 2022
+- Ubuntu
 configuration: Release
 platform: x64
 build:
   verbosity: minimal
 after_build:
 - cmd: 7z a pcmenc.zip encoder\x64\Release\pcmenc.exe readme.md
+- sh: 7z a pcmenc.zip encoder\pcmenc.exe readme.md
+for:
+-
+  matrix:
+    only:
+      - image: Ubuntu
+
+  build_script:
+  - make --directory encoder
+
+
 artifacts:
 - path: '*.zip'
