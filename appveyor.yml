@@ -1,7 +1,7 @@
 version: 0.{build}
 image:
-- Visual Studio 2022
 - Ubuntu
+- Visual Studio 2022
 configuration: Release
 platform: x64
 build:
@@ -16,7 +16,7 @@ for:
       - image: Ubuntu
 
   install:
-  - sh: sudo apt-get install libtbb-dev
+  - sh: sudo apt-get install libtbb-dev -y
   build_script:
   - make --directory encoder
 
