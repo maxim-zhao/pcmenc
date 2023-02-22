@@ -638,7 +638,8 @@ int makeFilter(Float Imp[], long Nwing, double Froll, double Beta,
    free(ImpR);
    for (i=Mwing; i<=Nwing; i++) Imp[i] = 0;
    /* Imp[Mwing] and Imp[-1] needed for quadratic interpolation */
-   Imp[-1] = Imp[1];
+   if (Nwing > 2)
+      Imp[-1] = Imp[1];
 
    return(Mwing);
 }

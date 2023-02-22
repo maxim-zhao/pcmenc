@@ -878,7 +878,6 @@ uint8_t* rlePack(const uint8_t* binBuffer, const size_t length, const size_t rom
     size_t tripletsEncoded = 0;
     size_t tripletsRemaining = length / 3;
     size_t encodedLength;
-    size_t totalEncodedLength = 0;
     size_t totalPadding = 0;
 
     while (tripletsRemaining > 0)
@@ -947,7 +946,6 @@ uint8_t* rlePack(const uint8_t* binBuffer, const size_t length, const size_t rom
         }
 
         // Update stats
-        totalEncodedLength += encodedLength;
         tripletsEncoded += tripletCount;
 
         // Copy in RLE data
