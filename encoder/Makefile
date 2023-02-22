@@ -3,8 +3,8 @@
 # g++
 # libtbb-dev
 
-CFLAGS ?= -Ofast -Wall -Wextra
-CXXFLAGS ?= -std=c++17 -Ofast -Wall -Wextra
+CFLAGS ?= -Ofast -Wall -Wextra -Werror
+CXXFLAGS ?= -std=c++17 -Ofast -Wall -Wextra -Werror
 
 pcmenc: pcmenc.o resample.o FileReader.o Args.o
 	g++ $(CXXFLAGS) $^ -o $@ -ltbb
