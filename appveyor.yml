@@ -7,8 +7,8 @@ platform: x64
 build:
   verbosity: minimal
 after_build:
-- cmd: 7z a pcmenc.zip encoder\x64\Release\pcmenc.exe readme.md
-- sh: 7z a pcmenc.zip encoder/pcmenc readme.md
+- cmd: 7z a pcmenc.zip encoder\x64\Release\pcmenc.exe README.md
+- sh: 7z a pcmenc.zip encoder/pcmenc README.md
 for:
 -
   matrix:
@@ -16,7 +16,7 @@ for:
       - image: Ubuntu2004
 
   install:
-  - sh: sudo apt install libtbb-dev -y
+  - sh: sudo apt install libtbb-dev --assume-yes --quiet
   build_script:
   - make --directory encoder
 
