@@ -416,7 +416,9 @@ int st_resample_drain(eff_t effp, st_sample_t *obuf, st_size_t *osamp)
         *osamp -= osamp_res;
         /* fprintf(stderr,"DRAIN osamp %d\n", *osamp); */
         if (isamp_res)
+        {
                 st_warn("drain overran obuf by %d\n", (int)isamp_res); fflush(stderr);
+        }
         return (ST_EOF);
 }
 

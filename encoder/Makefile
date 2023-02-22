@@ -1,12 +1,13 @@
-# #include <execution> requires tbb/blocked_range.h which is provided by libtbb-dev
+# To build you will need to install:
+# make
+# g++
+# libtbb-dev
 
 CFLAGS ?= -O2 -Wall
 CXXFLAGS ?= -std=c++17 -O2 -Wall
 
-#LDFLAGS = -ltbb
-
 pcmenc: pcmenc.o resample.o FileReader.o Args.o
-	g++ $(CXXFLAGS) $? -o $@ -ltbb
+	g++ $(CXXFLAGS) $^ -o $@ -ltbb
 
 
 clean:

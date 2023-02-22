@@ -5,7 +5,9 @@
 class Endian
 {
     static constexpr uint32_t uint32_ = 0x01020304;
+#ifdef MSVC_VER
 #pragma warning(disable:4310) // Truncating constant
+#endif
     static constexpr uint8_t magic_ = (const uint8_t&)uint32_;
 public:
     static constexpr bool little = magic_ == 0x04;
