@@ -44,7 +44,7 @@ std::string Args::getString(const std::string& name, const std::string& defaultV
     return it->second;
 }
 
-int Args::getInt(const std::string& name, uint32_t defaultValue)
+int Args::getInt(const std::string& name, int defaultValue)
 {
     const auto it = _args.find(name);
     if (it == _args.end())

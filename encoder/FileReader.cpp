@@ -26,33 +26,24 @@ FileReader::~FileReader()
 
 uint32_t FileReader::read32()
 {
-    uint32_t v;
-    _f.read((char*)&v, sizeof(uint32_t));
-    // ReSharper disable once CppUnreachableCode
-    if constexpr (Endian::big)
-    {
-        v = (v >> 24 & 0x000000ff) | (v >> 8 & 0x0000ff00) |
-            (v << 8 & 0x00ff0000) | (v << 24 & 0xff000000);
-    }
-    return v;
+    return static_cast<uint32_t>(
+        (read() << 0) |
+        (read() << 8) |
+        (read() << 16) |
+        (read() << 24));
 }
 
 uint16_t FileReader::read16()
 {
-    uint16_t v;
-    _f.read((char*)&v, sizeof(uint16_t));
-    // ReSharper disable once CppUnreachableCode
-    if constexpr (Endian::big)
-    {
-        v = (v << 8 & 0x00ff0000) | (v << 24 & 0xff000000);
-    }
-    return v;
+    return static_cast<uint16_t>(
+        (read() << 0) |
+        (read() << 8));
 }
 
 uint8_t FileReader::read()
 {
     uint8_t v;
-    _f.read((char*)&v, sizeof(uint8_t));
+    _f.read(reinterpret_cast<char*>(&v), sizeof(uint8_t));
     return v;
 }
 

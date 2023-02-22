@@ -10,9 +10,9 @@ class Args
 public:
     Args(int argc, char** argv);
 
-    std::string getString(const std::string& name, const std::string& defaultValue);
+    [[nodiscard]] std::string getString(const std::string& name, const std::string& defaultValue);
 
-    int getInt(const std::string& name, uint32_t defaultValue);
+    [[nodiscard]] int getInt(const std::string& name, int defaultValue);
 
-    bool exists(const std::string& name) const;
+    [[nodiscard]] bool exists(const std::string& name) const;
 };
