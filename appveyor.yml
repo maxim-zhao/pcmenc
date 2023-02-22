@@ -13,7 +13,7 @@ for:
 -
   matrix:
     only:
-      - image: Ubuntu
+      - image: Ubuntu2004
 
   install:
   - sh: sudo apt install libtbb-dev -y
