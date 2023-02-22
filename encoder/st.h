@@ -42,7 +42,9 @@ typedef uint32_t st_rate_t;
 #define ST_FLOAT_DDWORD_TO_SAMPLE(d) ((st_sample_t)(d*ST_SAMPLE_FLOAT_UNSCALE))
 #define ST_SAMPLE_TO_FLOAT_DDWORD(d) ((double)((double)d/(ST_SAMPLE_FLOAT_SCALE)))
 
+#ifndef M_PI
 #define M_PI    3.14159265358979323846
+#endif
 
 #define ST_EOF (-1)
 #define ST_SUCCESS (0)
