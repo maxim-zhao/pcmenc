@@ -100,3 +100,4 @@ pcmenc.VC.db
 *.png
 *.aplib
 *~
+/encoder/pcmenc

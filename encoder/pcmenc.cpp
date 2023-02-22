@@ -365,6 +365,7 @@ int viterbiInner(
         if (t % 4096 == 0)
         {
             printf("Processing %3.2f%%\r", 100.0 * t / numOutputs);
+            fflush(stdout);
         }
 
         T duration = dt[channel];
