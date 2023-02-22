@@ -15,9 +15,10 @@ for:
     only:
       - image: Ubuntu
 
+  install:
+  - sh: sudo apt-get install libtbb-dev
   build_script:
   - make --directory encoder
-
 
 artifacts:
 - path: '*.zip'
