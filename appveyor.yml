@@ -8,7 +8,7 @@ build:
   verbosity: minimal
 after_build:
 - cmd: 7z a pcmenc.zip encoder\x64\Release\pcmenc.exe readme.md
-- sh: 7z a pcmenc.zip encoder\pcmenc.exe readme.md
+- sh: 7z a pcmenc.zip encoder/pcmenc readme.md
 for:
 -
   matrix:
