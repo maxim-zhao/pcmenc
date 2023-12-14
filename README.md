@@ -51,6 +51,50 @@ Use the `-smooth` parameter to apply a low-frequency offset to the data to impro
 
 You may notice that the replayers do not map to the playback rates you might normally see like 8000Hz, 44100Hz, 48000Hz, etc. This is because the playback routines end up using a number of CPU cycles per input sample which cannot be a perfect match. The closest we can get to 44100Hz output on a 3579545Hz CPU is to emit a sample every 81 cycles (2/3 of the time) or 82 cycles (every third sample), which corresponds to an average rate of 44010.8 outputs per second. The difference is generally imperceptible.
 
+Commandline options
+-------------------
+
+| Flag | Description |
+|------|-------------|
+|`-r <n>` |Pack encoded wave into `n`KB blocks for rom replayers (typically 16) |
+|`-p <packing>` |Packing type:<ul><li>0 = 4bit RLE (default): bits 7-4 = run length, bits 3-0 = value<li>1 = 3 bit RLE; as before but run length is in bits 7-5<li>2 = 1 byte values, upper nibble unused<li>3 = 1 byte {channel, value} pairs<li>4 = big-endian packed {value, value} pairs<li>5 = K-means clustered vector tables (6 values per vector)<li>6 = K-means clustered vector tables (3 values per vector)</ul> |
+|`-cpuf <frequency>` |CPU frequency (Hz), default 3579545 |
+|`-dt1 <cycles>` |CPU cycles between update of channel A and B |
+|`-dt2 <cycles>` |CPU cycles between update of channel B and C |
+|`-dt3 <cycles>` |CPU cycles between update of channel C and A |
+|`-smooth <amount>` |Low-frequency skewing adjustment decay rate. Default 0 = off. 10 is suitable for 44kHz audio |
+|`-a <amplitude>` |Overdrive amplitude adjustment. Default 100 = no adjustment. |
+|`-rto <ratio>` |Number of input samples per PSG triplet. Default 1.
+|`-c <costfun>` |Viterbi cost function: <ul><li>1 = abs() measure<li>2 = Standard mean square estimate (default)<li>&gt;2 = Lagrange interpolation of order 'c' |
+|`-i <interpol>` |Resampling interpolation mode: <ul><li>0 = Linear interpolation<li>1 = Quadratic interpolation<li>2 = Lagrange interpolation (default) |
+|`-chip <chip>` |Chip type:<ul><li>0 = AY-3-8910/YM2149F (MSX sound chip)<li>1 = SN76489/SN76496/NCR8496 (SMS sound chip) (default) |
+
+Example
+-------
+
+```
+>pcmenc.exe -rto 3 -p 4 -dt1 81 -dt2 81 -d
+t3 82 -r 16 -smooth 10 Knight Rider.wav"
+Encoding PSG samples at 44010Hz
+Loading Knight Rider.wav...done; 3372462 samples
+Skewing samples for better quality...done
+Viterbi SNR optimization:
+   3 input samples per PSG triplet output
+   dt1 = 81  (Normalized: 0.332)
+   dt2 = 81  (Normalized: 0.332)
+   dt3 = 82  (Normalized: 0.336)
+   Using 4 bytes data precision
+   Resampling using Lagrange interpolation on 11 points... done (3372462 output points)
+   Using cost function: L2
+Processing 100.00%
+The cost metric in Viterbi is about 80.164
+SNR is about 25.38
+Converted 3372462 samples to 3372462 outputs in 45.05s = 74869 samples per second
+Packing data with splits at 16KB boundaries, as packed volume pairs %aaaabbbb
+Packed as 1686488 bytes of data (103 banks with 0 bytes padding)
+Saving 1686488 bytes to Knight Rider.wav.pcmenc...done
+```
+
 How it works
 ------------
 
