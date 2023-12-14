@@ -27,7 +27,13 @@ The features I have added are:
 Usage
 -----
 
-First, decide on your playback rate and data rate requirements. This will usually be in the form of a playback routine.
+First, decide on your playback rate and data rate requirements. This will usually be in the form of a playback routine. The playback routines are mapped to specific encoder settings:
+
+1. Sampling rate. Just like on any other sample player, more samples per second = better reproduction, especially of higher frequencies. This maps to the interaction between the `-dt` (inter-output timings) and `-clock` (CPU speed) settings.
+2. `-rto`: The ratio of input samples per full update (three channels) of the PSG. This is from 1 (highest accuracy) to 3 (lowest). This maps somewhat to the concept of bit depth for audio: higher accuracy means clearer audio. However, there's a linear relationship to the data size: `-rto 3` will emit 1/3 as much data as `-rto 1`. Also, there is not enough CPU time (on the Master System at least) to emit three values to the PSG for every sample at ~44kHz.
+3. `-p`: packing. There are many packing routines but in general, the "packed volumes" `-p4` option is the simplest and fastest: it packs each PSG update into half of a byte. The RLE packing `-p0` often results in larger data. 
+
+In general, trading off lower accuracy (`-rto`) for a higher sampling rate gets you better quality; `-rto 3` is generally the best option if you have high quality audio.
 
 Next, prepare your audio file to match this playback rate. Perform all the manipulations it needs (amplifying, compressing, sample rate conversion) in a half-decent audio editor. I use [Audacity](http://www.audacityteam.org/), which is good enough.
 
@@ -38,6 +44,12 @@ pcmenc -dt1 81 -dt2 81 -dt3 81 -rto 3 -r 16 input.wav
 ```
 
 A file will be produced with the suffix `.pcmenc`, e.g. `input.wav.pcmenc`. Binary include it in your program and invoke your player code according to its comments, and marvel at the quality of the audio!
+
+Use the `-r` parameter to split data into chunks. You will need to play these chunks in order by calling the playback function repeatedly.
+
+Use the `-smooth` parameter to apply a low-frequency offset to the data to improve sample resolution. The logarithmic outputs of the PSG means that it has poor resolution at the maximum value of a wave and good resolution near the minimum. This offset means that non-maximum-amplitude parts of the audio will be skewed towards the area with best resolution. You may need to experiment to find a value that suits the sample rate you are using.
+
+You may notice that the replayers do not map to the playback rates you might normally see like 8000Hz, 44100Hz, 48000Hz, etc. This is because the playback routines end up using a number of CPU cycles per input sample which cannot be a perfect match. The closest we can get to 44100Hz output on a 3579545Hz CPU is to emit a sample every 81 cycles (2/3 of the time) or 82 cycles (every third sample), which corresponds to an average rate of 44010.8 outputs per second. The difference is generally imperceptible.
 
 How it works
 ------------
