@@ -98,7 +98,7 @@ How it works
 ------------
 
 * First, the sample is loaded into memory and converted to mono. 
-* It is then normalised to the range 0..1, by default in a way that clips the peaks to get a louder result. 
+* It is then normalised to the range 0..1 and optionally amplified/skewed.
 * Next, for each sample:
   * It iterates through all possible PSG volume states (including ones that are equivalent output but different channel values or ordering).
   * For each possible state of "the other two channels", it selects the value for "the third channel" which will minimise the total error between the final output and the desired output. This error is defined by a configurable cost metric (by default, the time-weighted sum of squares of the deviation).
