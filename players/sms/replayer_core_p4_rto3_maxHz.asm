@@ -109,6 +109,7 @@ PsgLoop:
   ld a,b                    ;  4
   or c                      ;  4
   jp nz, PsgLoop            ; 10
+  ret
 
 PLAY_SAMPLE_2:
   ; 8-bit counter and more unrolling to reduce loop time to 13 cycles
@@ -211,7 +212,7 @@ PLAY_SAMPLE_3:
   out ($7f),a ; 11  -> 38
   
   djnz -      ; 13
-
+  ret
   
 
 ; We create some lookup tables for all the possible data values for both low and high nibbles.
