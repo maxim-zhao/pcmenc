@@ -73,8 +73,7 @@ Example
 -------
 
 ```
->pcmenc.exe -rto 3 -p 4 -dt1 81 -dt2 81 -d
-t3 82 -r 16 -smooth 10 Knight Rider.wav"
+>pcmenc.exe -rto 3 -p 4 -dt1 81 -dt2 81 -dt3 82 -r 16 -smooth 10 Knight Rider.wav"
 Encoding PSG samples at 44010Hz
 Loading Knight Rider.wav...done; 3372462 samples
 Skewing samples for better quality...done
